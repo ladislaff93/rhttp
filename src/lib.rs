@@ -5,6 +5,8 @@ pub mod response;
 pub mod router;
 pub mod handler;
 pub mod from_request;
+pub mod endpoint;
+pub mod url;
 
 
 #[cfg(test)]
@@ -32,7 +34,7 @@ mod tests {
 
 /* 
 TODO:
-    - Implements generic handlers that will take 0 to n arguments and return impl IntoResponse trait
+    - Implements generic handlers that will take 0 to n arguments and return impl IntoResponse trait | DONE
     - Process all request headers
     - implement url parsing
     - implements other part of the http protocol

@@ -1,5 +1,5 @@
 use std::{fs, path::Path};
-use rhttp::{app::App, common, from_request::QueryParams, http_request::HttpMethod};
+use rhttp::{app::App, common, from_request::{PathParam, QueryParams}, http_request::HttpMethod};
 use common::{CRLF, FINAL_CRLF};
 use serde::Deserialize;
 
@@ -29,7 +29,13 @@ fn handle_get_query_params(QueryParams(s):QueryParams<S>) -> String {
     format!("HTTP/1.1 200 OK{CRLF}Content-Length: {length}{FINAL_CRLF}{content}")
 }
 
-fn handle_get_path_params(order_id: usize, activity_id: usize) -> String {
+fn handle_get_path_params(PathParam(order_id): PathParam<usize>) -> String {
+    let content = format!("order_id: {order_id}");
+    let length = content.len();
+    format!("HTTP/1.1 200 OK{CRLF}Content-Length: {length}{FINAL_CRLF}{content}")
+}
+
+fn handle_get_path_params_with_two(PathParam(order_id): PathParam<usize>, PathParam(activity_id): PathParam<usize>) -> String {
     let content = format!("order_id: {order_id}, activity_id: {activity_id}");
     let length = content.len();
     format!("HTTP/1.1 200 OK{CRLF}Content-Length: {length}{FINAL_CRLF}{content}")
@@ -41,8 +47,9 @@ fn main() {
 
     // register handlers
     app.register_path(HttpMethod::Get, "/", handle_get_base);
-    // app.register_path(HttpMethod::Get, "/order/{order_id}/activity/{activity_id}", handle_get_path_params);
-    // app.register_path(HttpMethod::Get, "/path", handle_get_path_params);
+    app.register_path(HttpMethod::Get, "/order/{order_id}", handle_get_path_params);
+    app.register_path(HttpMethod::Get, "/order/{order_id}/activity/{activity_id}", handle_get_path_params_with_two);
+    app.register_path(HttpMethod::Get, "/path", handle_get_query_params);
     app.register_path(HttpMethod::Post, "/", handle_post_base);
 
     app.listen();

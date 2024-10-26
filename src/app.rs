@@ -1,8 +1,9 @@
 use std::io::Write;
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
+use std::rc::Rc;
+use crate::endpoint::{BoxedIntoRoute, Endpoint};
 use crate::handler::Handler;
-use crate::router::BoxedIntoRoute;
-use crate::{http_request::{HttpMethod, HttpRequest}, router::Router};
+use crate::{http_request::HttpMethod, router::Router};
 
 pub struct App {
     pub router: Router,
@@ -27,23 +28,19 @@ impl App {
     pub fn listen(&self) {
         for stream_res in self.listener.as_ref().unwrap().incoming() {
             if let Ok(mut stream) = stream_res {
-                let res = self.parse_incoming_data(&stream);
-                stream.write_all(res.as_bytes()).unwrap();
+                let res = self.router.handle_request(&stream);
+                stream.write_all(res.body.as_bytes()).unwrap();
             }
         }
     }
 
-    pub fn parse_incoming_data(&self, stream: &TcpStream) -> String {
-        let req = HttpRequest::new(&stream);
-        println!("Req: {:#?}", req);
-        self.router.handle_request(req).body
-    }
-
-    pub fn register_path<H, T>(&mut self, method: HttpMethod, path: &str, handler: H) 
+    pub fn register_path<H, T>(&mut self, method: HttpMethod, path: &'static str, handler: H) 
     where 
         H: Handler<T> + 'static,
         T: 'static
     {
-        self.router.register_path(method, path, BoxedIntoRoute::from_handler(handler));
+        let boxed_handler = BoxedIntoRoute::from_handler(handler);
+        let endpoint = Rc::new(Endpoint::new(path, boxed_handler));
+        self.router.register_path(method, endpoint);
     }
 }
