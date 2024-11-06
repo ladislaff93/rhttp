@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::net::TcpListener;
 use std::rc::Rc;
-use crate::endpoint::{BoxedIntoRoute, Endpoint};
+use crate::endpoint::Endpoint;
 use crate::handler::Handler;
 use crate::{http_request::HttpMethod, router::Router};
 
@@ -39,8 +39,12 @@ impl App {
         H: Handler<T> + 'static,
         T: 'static
     {
-        let boxed_handler = BoxedIntoRoute::from_handler(handler);
-        let endpoint = Rc::new(Endpoint::new(path, boxed_handler));
+        let endpoint = Rc::new(
+            Endpoint::new(
+                path,
+                handler
+            )
+        );
         self.router.register_path(method, endpoint);
     }
 }

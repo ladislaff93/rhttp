@@ -32,7 +32,7 @@ where
     T: for<'a>Deserialize<'a>
 {
     fn extract(req: &HttpRequest) -> Self {
-        Self::from_path(req.query_params.clone())
+        Self::from_path(req.query_params)
     }
 }
 

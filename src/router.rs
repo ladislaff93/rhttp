@@ -1,5 +1,6 @@
-use std::{collections::HashMap, net::TcpStream, rc::Rc};
-use crate::{common::FINAL_CRLF, endpoint::{BoxedIntoRoute, Endpoint}, http_request::{HttpMethod, HttpRequest}, response::Response};
+use std::{collections::HashMap, io::{BufReader, Read, Write}, net::TcpStream, rc::Rc, string::FromUtf8Error};
+use crate::{common::FINAL_CRLF, endpoint::{BoxedHandler, Endpoint}, http_request::{HttpMethod, HttpRequest}, response::Response};
+use std::io::BufRead;
 
 pub struct Router {
     routes: HashMap<HttpMethod, Vec<Rc<Endpoint>>>
@@ -18,27 +19,27 @@ impl Router {
         self.routes.entry(method).and_modify(|v| v.push(endpoint));
     }
 
-    /*
-        we need to resolve incoming request with path params /foo/5/bar/10 
-        into handler that is registered under                /foo/{usize}/bar/{usize}
-        we can split both incoming and registered path into vec 
-        then we find index of the dynamic parts of the path
-        and then we try to call the handler and try to cast into expected types
-        if it fails we look for another handler and path if we reach end we return 404 not found / 400 bad request
-        
-        to avoid many urls in one vec we can split them into dyn and static during path registration 
-        HttpMethod, HashMap<RouteType, Vec<Endpoints>>
-    */
-    pub fn handle_request(&self, request: &TcpStream) -> Response {
-        let mut request = HttpRequest::new(request);
-        println!("Req: {:#?}", request);
-        if let Some(handler) = self.get_handler(&mut request) {
-            return handler.call(&request);
+    fn load_request<S: Read + Write>(stream: S) -> Result<String, FromUtf8Error> {
+        let mut buf_reader = BufReader::new(stream);
+        let load_buffer = buf_reader.fill_buf().unwrap().to_vec();
+        buf_reader.consume(load_buffer.len());
+
+        Ok(String::from_utf8(load_buffer)?)
+    }
+
+    pub fn handle_request(&self, stream: &TcpStream) -> Response {
+        if let Ok(request_parts) = Self::load_request(stream) {
+            if let Ok(mut request) = HttpRequest::from_parts(&request_parts) {
+                println!("Req: {:#?}", request);
+                if let Some(handler) = self.get_handler(&mut request) {
+                    return handler.call(&request);
+                }
+            }
         }
         return Self::handler_not_found();
     }
 
-    fn get_handler(&self, request: &mut HttpRequest) -> Option<&BoxedIntoRoute> {
+    fn get_handler(&self, request: &mut HttpRequest) -> Option<&BoxedHandler> {
         for endpoint in self.routes.get(&request.method).expect("Map of Http Methods!") {
             if !endpoint.dynamic_path {
                 if endpoint.path == request.path {

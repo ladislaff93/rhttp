@@ -3,40 +3,44 @@ use crate::{handler::Handler, http_request::HttpRequest, response::Response};
 
 pub struct Endpoint {
     pub path: &'static str,
-    pub handler: BoxedIntoRoute,
+    pub handler: BoxedHandler,
     pub dynamic_path: bool
 }
 
 impl Endpoint {
-    pub fn new(path: &'static str, handler: BoxedIntoRoute) -> Self {
+    pub fn new<H, T>(path: &'static str, handler: H) -> Self 
+    where
+        H: Handler<T> + 'static,
+        T: 'static,
+    {
         let mut dynamic_path = false; 
         if path.contains("{") && path.contains("}") {
            dynamic_path = true; 
         }
-        Self {path, handler, dynamic_path} 
+        Self {path, handler: BoxedHandler::from_handler(handler), dynamic_path} 
     }
 }
 
-pub struct BoxedIntoRoute(Box<dyn ErasedIntoRoute>);
+pub struct BoxedHandler(Box<dyn ErasedIntoHandler>);
 
-impl BoxedIntoRoute {
+impl BoxedHandler {
     pub fn from_handler<H, T>(handler: H) -> Self
     where
         H: Handler<T> + 'static,
         T: 'static,
     {
-        Self(Box::new(MakeErasedHandler {
+        Self(Box::new(HandlerWrapper {
             handler,
             marker:PhantomData
         }))
     }
 }
 
-pub trait ErasedIntoRoute {
+pub trait ErasedIntoHandler {
     fn call(&self, request:&HttpRequest) -> Response;
 }
 
-pub struct MakeErasedHandler<H, T>
+pub struct HandlerWrapper<H, T>
 where
     H: Handler<T>,
     T: 'static 
@@ -45,24 +49,24 @@ where
     marker: std::marker::PhantomData<T>
 }
 
-impl<H, T> ErasedIntoRoute for MakeErasedHandler<H, T>
+impl<H, T> ErasedIntoHandler for HandlerWrapper<H, T>
 where
     H: Handler<T>,
 {
-    fn call(&self, request:&HttpRequest) -> Response {
+    fn call(&self, request: &HttpRequest) -> Response {
         self.handler.call(request)
     }
 }
 
-impl Deref for BoxedIntoRoute {
-    type Target = Box<dyn ErasedIntoRoute>;
+impl Deref for BoxedHandler {
+    type Target = Box<dyn ErasedIntoHandler>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl DerefMut for BoxedIntoRoute {
+impl DerefMut for BoxedHandler {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
