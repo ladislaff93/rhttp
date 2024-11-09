@@ -1,4 +1,5 @@
 use core::{error, fmt};
+use std::str::Utf8Error;
 
 pub const FINAL_CRLF: &str = "\r\n\r\n";
 pub const CRLF: &str = "\r\n";
@@ -12,6 +13,11 @@ impl fmt::Display for ParsingRequestErr {
     }
 }
 
+/*
+* use thiserror crate to handle errors 
+*
+* */
+
 impl error::Error for ParsingRequestErr {}
 
 #[derive(Debug)]
@@ -21,11 +27,18 @@ pub enum RhttpErr {
     ParsingPathErr,
     ParsingHttpProtocolErr,
     ParsingHttpHeaderErr,
+    HeaderValueErr(Utf8Error),
     ParsingContentLength(core::convert::Infallible)
 }
 
 impl From<core::convert::Infallible> for RhttpErr {
     fn from(value: core::convert::Infallible) -> Self {
        Self::ParsingContentLength(value) 
+    }
+}
+
+impl From<Utf8Error> for RhttpErr {
+    fn from(value: Utf8Error) -> Self {
+        Self::HeaderValueErr(value)
     }
 }

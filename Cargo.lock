@@ -3,6 +3,12 @@
 version = 3
 
 [[package]]
+name = "bytes"
+version = "1.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ac0150caa2ae65ca5bd83f25c7de183dea78d4d366469f148435e2acfbad0da"
+
+[[package]]
 name = "form_urlencoded"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -68,6 +74,7 @@ dependencies = [
 name = "rhttp"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "proc_macros",
  "serde",
  "serde_json",

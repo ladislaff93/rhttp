@@ -35,8 +35,14 @@ mod tests {
 
 /* 
 TODO:
-    - Implements generic handlers that will take 0 to n arguments and return impl IntoResponse trait | DONE
-    - Process all request headers, headers enum and parsing
+    - Implements MVP generic handlers that will take 0 to n arguments and return impl IntoResponse trait | DONE
+    - implements response
     - implement url parsing
     - implements other part of the http protocol
+    - headers processing impl:
+        - Process all request headers, headers enum and parsing
+        - header type
+        - header value
+        - conversions
+        - pretty printing headers map
 */

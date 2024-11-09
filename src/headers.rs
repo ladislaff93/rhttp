@@ -1,17 +1,11 @@
+use core::str;
 use std::str::FromStr;
 
+use bytes::{Bytes, BytesMut};
 use crate::common::RhttpErr;
-
-struct Header<'r>(HeaderType<'r>, &'r str);
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum HeaderType<'r> {
-    Standard(Standard),
-    Custom(&'r str)
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-enum Standard {
     /// The HTTP Accept request header indicates which content types, expressed 
     /// as MIME types, the client is able to understand. 
     ///
@@ -79,29 +73,24 @@ enum Standard {
     /// The User-Agent request header is a characteristic string that lets 
     /// servers and network peers identify the application, operating system,
     /// vendor, and/or version of the requesting user agent. 
-    UserAgent
-}
-
-impl FromStr for Standard {
-    type Err = RhttpErr;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Accept" => Ok(Self::Accept),
-            "Connection" => Ok(Self::Connection),
-            "Content-Length" => Ok(Self::ContentLength),
-            "Content-Type" => Ok(Self::ContentType),
-            "Accept-Encoding" => Ok(Self::AcceptEncoding),
-            "User-Agent" => Ok(Self::UserAgent),
-            _ => Err(RhttpErr::ParsingHttpHeaderErr),
-        }
-    }
+    UserAgent,
+    /// The Host request header specifies the host and port number of the server
+    /// to which the request is being sent.
+    ///
+    /// If no port is included, the default port for the service requested is
+    /// implied (e.g., 443 for an HTTPS URL, and 80 for an HTTP URL).
+    ///
+    /// A Host header field must be sent in all HTTP/1.1 request messages. 
+    /// A 400 (Bad Request) status code may be sent to any HTTP/1.1 request 
+    /// message that lacks or contains more than one Host header field.
+    Host,
+    Custom(&'r str)
 }
 
 impl <'r> HeaderType<'r> {
     pub fn from_str(s: &'r str) -> Result<Self, RhttpErr> {
-        if let Ok(std_header) = Standard::from_str(s) {
-            return Ok(Self::Standard(std_header));
+        if let Ok(std_header) = HeaderType::try_into_std(s) {
+            return Ok(std_header);
         } else {
             // TODO: add validation of Custom header 
             // this is always true but i just created bare bone structure for future validation
@@ -111,5 +100,56 @@ impl <'r> HeaderType<'r> {
             Err(RhttpErr::ParsingHttpHeaderErr)
         }
     }
+
+    fn try_into_std(s: &str) -> Result<Self, RhttpErr> {
+        match s {
+            "Accept" => Ok(Self::Accept),
+            "Connection" => Ok(Self::Connection),
+            "Content-Length" => Ok(Self::ContentLength),
+            "Content-Type" => Ok(Self::ContentType),
+            "Accept-Encoding" => Ok(Self::AcceptEncoding),
+            "User-Agent" => Ok(Self::UserAgent),
+            "Host" => Ok(Self::Host),
+            _ => Err(RhttpErr::ParsingHttpHeaderErr),
+        }
+    }
 }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct HeaderValue(pub Bytes);
+
+impl HeaderValue {
+    pub fn to_str<'r>(&'r self) -> Result<&'r str, RhttpErr> {
+        Ok(str::from_utf8(self.as_ref())?)
+    }
+}
+
+impl FromStr for HeaderValue {
+    type Err = RhttpErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(Bytes::copy_from_slice(s.as_bytes())))
+    }
+}
+
+impl <'r> TryFrom<&'r str> for HeaderValue {
+    type Error = RhttpErr;
+
+    fn try_from(value: &'r str) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+impl TryFrom<String> for HeaderValue {
+    type Error = RhttpErr;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+impl AsRef<[u8]> for HeaderValue {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
