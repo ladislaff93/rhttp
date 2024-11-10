@@ -1,6 +1,6 @@
+use core::{app::App, from_request::{PathParam, QueryParams}};
 use std::{fs, path::Path};
-use rhttp::{app::App, common, from_request::{PathParam, QueryParams}, http_request::HttpMethod};
-use common::{CRLF, FINAL_CRLF};
+use http::{method::Method, common::{FINAL_CRLF, CRLF}};
 use serde::Deserialize;
 
 
@@ -46,11 +46,11 @@ fn main() {
     app.bind_address("127.0.0.1:8080");
 
     // register handlers
-    app.register_path(HttpMethod::Get, "/", handle_get_base);
-    app.register_path(HttpMethod::Get, "/order/{order_id}", handle_get_path_params);
-    app.register_path(HttpMethod::Get, "/order/{order_id}/activity/{activity_id}", handle_get_path_params_with_two);
-    app.register_path(HttpMethod::Get, "/path", handle_get_query_params);
-    app.register_path(HttpMethod::Post, "/", handle_post_base);
+    app.register_path(Method::Get, "/", handle_get_base);
+    app.register_path(Method::Get, "/order/{order_id}", handle_get_path_params);
+    app.register_path(Method::Get, "/order/{order_id}/activity/{activity_id}", handle_get_path_params_with_two);
+    app.register_path(Method::Get, "/path", handle_get_query_params);
+    app.register_path(Method::Post, "/", handle_post_base);
 
     app.listen();
 }

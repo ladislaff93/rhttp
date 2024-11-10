@@ -1,21 +1,23 @@
 use std::{collections::HashMap, io::{BufReader, Read, Write}, net::TcpStream, rc::Rc, string::FromUtf8Error};
-use crate::{common::FINAL_CRLF, endpoint::{BoxedHandler, Endpoint}, http_request::{HttpMethod, HttpRequest}, response::Response};
+use http::{method::Method, request::Request, common::FINAL_CRLF};
+
+use crate::{endpoint::{BoxedHandler, Endpoint}, response::Response};
 use std::io::BufRead;
 
 pub struct Router {
-    routes: HashMap<HttpMethod, Vec<Rc<Endpoint>>>
+    routes: HashMap<Method, Vec<Rc<Endpoint>>>
 }
 
 impl Router {
     pub fn new() -> Self {
         let mut routes = HashMap::new();
-        for method in HttpMethod::iterator() {
+        for method in Method::iterator() {
             routes.insert(*method, Vec::<Rc<Endpoint>>::new());
         }
         Self {routes}
     }
 
-    pub fn register_path(&mut self, method: HttpMethod, endpoint: Rc<Endpoint>) {
+    pub fn register_path(&mut self, method: Method, endpoint: Rc<Endpoint>) {
         self.routes.entry(method).and_modify(|v| v.push(endpoint));
     }
 
@@ -29,7 +31,7 @@ impl Router {
 
     pub fn handle_request(&self, stream: &TcpStream) -> Response {
         if let Ok(request_parts) = Self::load_request(stream) {
-            if let Ok(mut request) = HttpRequest::from_parts(&request_parts) {
+            if let Ok(mut request) = Request::from_parts(&request_parts) {
                 println!("Req: {:#?}", request);
                 if let Some(handler) = self.get_handler(&mut request) {
                     return handler.call(&request);
@@ -39,8 +41,8 @@ impl Router {
         return Self::handler_not_found();
     }
 
-    fn get_handler(&self, request: &mut HttpRequest) -> Option<&BoxedHandler> {
-        for endpoint in self.routes.get(&request.method).expect("Map of Http Methods!") {
+    fn get_handler(&self, request: &mut Request) -> Option<&BoxedHandler> {
+        for endpoint in self.routes.get(&request.method).expect("Map of  Methods!") {
             if !endpoint.dynamic_path {
                 if endpoint.path == request.path {
                     return Some(&endpoint.handler);
@@ -60,7 +62,7 @@ impl Router {
         }
     }
 
-    fn match_dynamic_path<'r>(&self, request: &mut HttpRequest<'r>, endpoint: Rc<Endpoint>) -> bool {
+    fn match_dynamic_path<'r>(&self, request: &mut Request<'r>, endpoint: Rc<Endpoint>) -> bool {
         let register_path_splitted = endpoint.path.split("/").filter(|s|!s.is_empty()).collect::<Vec<&str>>();
         let incoming_path_splitted = request.path.split("/").filter(|s|!s.is_empty()).collect::<Vec<&str>>();
 
@@ -108,8 +110,8 @@ mod tests {
     // fn test_get_dynamic_path_register_one_find_one() {
     //     let mut router = setup_router();
     //     let endpoint = Rc::new(Endpoint::new("/{r}", BoxedIntoRoute::from_handler(|| -> &str {"Register Get Method on /{r}"})));
-    //     router.register_path(HttpMethod::Get, endpoint.clone());
-    //     let mut request = HttpRequest::new(String::from("GET /hello HTTP/1.1").bytes().collect::<VecDeque<u8>>());
+    //     router.register_path(Method::Get, endpoint.clone());
+    //     let mut request = Request::new(String::from("GET /hello HTTP/1.1").bytes().collect::<VecDeque<u8>>());
     //     assert_eq!(endpoint.dynamic_path, true);
     //     assert_eq!(router.get_dynamic_path(&mut request, endpoint.clone()).unwrap(), "/hello".to_string());
     // }
@@ -118,8 +120,8 @@ mod tests {
     // fn test_get_dynamic_path_register_not_dynamic_find_none() {
     //     let mut router = setup_router();
     //     let endpoint = Rc::new(Endpoint::new("/", BoxedIntoRoute::from_handler(|| -> &str {"Register Get Method on /"})));
-    //     router.register_path(HttpMethod::Get, endpoint.clone());
-    //     let mut request = HttpRequest::new(String::from("GET / HTTP/1.1").bytes().collect::<VecDeque<u8>>());
+    //     router.register_path(Method::Get, endpoint.clone());
+    //     let mut request = Request::new(String::from("GET / HTTP/1.1").bytes().collect::<VecDeque<u8>>());
     //     assert_eq!(endpoint.dynamic_path, false);
     //     assert_eq!(router.get_dynamic_path(&mut request, endpoint.clone()), None);
     // }
@@ -128,8 +130,8 @@ mod tests {
     // fn test_get_dynamic_path_register_dynamic_multiple_arguments_find_one() {
     //     let mut router = setup_router();
     //     let endpoint = Rc::new(Endpoint::new("/{a}/{b}/{c}/{d}/{e}/{f}", BoxedIntoRoute::from_handler(|| -> &str {"Register Get Method on /{a}/{b}/{c}/{d}/{e}/{f}"})));
-    //     router.register_path(HttpMethod::Get, endpoint.clone());
-    //     let mut request = HttpRequest::new(String::from("GET /1/2/3/4/5/6 HTTP/1.1").bytes().collect::<VecDeque<u8>>());
+    //     router.register_path(Method::Get, endpoint.clone());
+    //     let mut request = Request::new(String::from("GET /1/2/3/4/5/6 HTTP/1.1").bytes().collect::<VecDeque<u8>>());
     //     assert_eq!(endpoint.dynamic_path, true);
     //     assert_eq!(router.get_dynamic_path(&mut request, endpoint.clone()).unwrap(), "/1/2/3/4/5/6");
     // }
@@ -138,8 +140,8 @@ mod tests {
     // fn test_get_handler() {
     //     let mut router = setup_router();
     //     let endpoint = Rc::new(Endpoint::new("/", BoxedIntoRoute::from_handler(|| -> &str {"Register Get Method on /"})));
-    //     router.register_path(HttpMethod::Get, endpoint.clone());
-    //     let mut request = HttpRequest::new(String::from("GET / HTTP/1.1").bytes().collect::<VecDeque<u8>>());
+    //     router.register_path(Method::Get, endpoint.clone());
+    //     let mut request = Request::new(String::from("GET / HTTP/1.1").bytes().collect::<VecDeque<u8>>());
     //     let handler = router.get_handler(&mut request);
     //     assert_eq!(handler.unwrap().call(&request), Response{body: "Register Get Method on /".to_string()});
     // }
@@ -150,8 +152,8 @@ mod tests {
     //     let endpoint = Rc::new(
     //         Endpoint::new("/{r}", BoxedIntoRoute::from_handler(|PathParam(r): PathParam<String>| -> String {format!("Register Get Method on /{r}")}))
     //     );
-    //     router.register_path(HttpMethod::Get, endpoint.clone());
-    //     let mut request = HttpRequest::new(String::from("GET /hello HTTP/1.1").bytes().collect::<VecDeque<u8>>());
+    //     router.register_path(Method::Get, endpoint.clone());
+    //     let mut request = Request::new(String::from("GET /hello HTTP/1.1").bytes().collect::<VecDeque<u8>>());
     //     let handler = router.get_handler(&mut request);
     //     assert_eq!(handler.unwrap().call(&request), Response{body: "Register Get Method on /hello".to_string()});
     // }
@@ -161,7 +163,7 @@ mod tests {
     //     let mut router = setup_router();
     //
     //     router.register_path(
-    //         HttpMethod::Get,
+    //         Method::Get,
     //         Rc::new(Endpoint::new("/", 
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
@@ -171,7 +173,7 @@ mod tests {
     //         ))
     //     );
     //     router.register_path(
-    //         HttpMethod::Post,
+    //         Method::Post,
     //         Rc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
@@ -181,7 +183,7 @@ mod tests {
     //         ))
     //     );
     //     router.register_path(
-    //         HttpMethod::Delete,
+    //         Method::Delete,
     //         Rc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
@@ -191,7 +193,7 @@ mod tests {
     //         ))
     //     );
     //     router.register_path(
-    //         HttpMethod::Put,
+    //         Method::Put,
     //         Rc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
@@ -201,7 +203,7 @@ mod tests {
     //         ))
     //     );
     //     router.register_path(
-    //         HttpMethod::Options,
+    //         Method::Options,
     //         Rc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
@@ -211,7 +213,7 @@ mod tests {
     //         ))
     //     );
     //     router.register_path(
-    //         HttpMethod::Head,
+    //         Method::Head,
     //         Rc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
@@ -221,7 +223,7 @@ mod tests {
     //         ))
     //     );
     //     router.register_path(
-    //         HttpMethod::Trace,
+    //         Method::Trace,
     //         Rc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
@@ -231,7 +233,7 @@ mod tests {
     //         ))
     //     );
     //     router.register_path(
-    //         HttpMethod::Connect,
+    //         Method::Connect,
     //         Rc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
@@ -241,7 +243,7 @@ mod tests {
     //         ))
     //     );
     //     router.register_path(
-    //         HttpMethod::Patch,
+    //         Method::Patch,
     //         Rc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {

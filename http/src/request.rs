@@ -1,75 +1,10 @@
 use std::collections::HashMap;
-use std::str::FromStr;
 use serde_json::Value;
-use crate::common::{RhttpErr, CRLF, FINAL_CRLF};
-use crate::headers::{HeaderType, HeaderValue};
-
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Default)]
-pub enum HttpMethod {
-    Get,
-    Put,
-    Post,
-    Delete,
-    Options,
-    Head,
-    Trace,
-    Connect,
-    Patch,
-    #[default] None
-}
-
-impl HttpMethod {
-    pub fn from_str(method: &str) -> Self {
-        match method.to_uppercase().as_str() {
-            "GET" => Self::Get,
-            "POST" => Self::Post,
-            "PUT" => Self::Put,
-            "DELETE" => Self::Delete,
-            "OPTIONS" => Self::Options,
-            "HEAD" => Self::Head,
-            "TRACE" => Self::Trace,
-            "CONNECT" => Self::Connect,
-            "PATCH" => Self::Patch,
-            _ => unreachable!("Any other http request method does not exists"),
-
-        }
-    }
-
-    pub fn iterator() -> std::slice::Iter<'static, HttpMethod> {
-        static HTTP_METHOD: [HttpMethod;9] = [
-            HttpMethod::Get,
-            HttpMethod::Put,
-            HttpMethod::Post,
-            HttpMethod::Delete,
-            HttpMethod::Options,
-            HttpMethod::Head,
-            HttpMethod::Trace,
-            HttpMethod::Connect,
-            HttpMethod::Patch,
-        ];
-        HTTP_METHOD.iter()
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Default)]
-pub enum ProtocolVersion {
-    #[default] Http1
-}
-
-impl ProtocolVersion {
-    pub fn from_str(protocol: &str) -> Self {
-        let (first, _) = protocol.split_once(".").unwrap();
-        match first.to_uppercase().as_str() {
-            "HTTP/1" => Self::Http1,
-            _ => unreachable!("Any other http protocol does not exists")
-        } 
-    }
-}
+use crate::{common::{RhttpErr, CRLF, FINAL_CRLF}, headers::{HeaderType, HeaderValue}, method::Method, version::ProtocolVersion};
 
 #[derive(Debug)]
-pub struct HttpRequest<'r> {
-    pub method: HttpMethod,
+pub struct Request<'r> {
+    pub method: Method,
     pub path: &'r str,
     pub protocol_version: ProtocolVersion,
     pub query_params: &'r str,
@@ -78,10 +13,10 @@ pub struct HttpRequest<'r> {
     pub body: Option<&'r str>
 }
 
-impl <'r> Default for  HttpRequest<'r> {
+impl <'r> Default for  Request<'r> {
     fn default() -> Self {
         Self {
-            method: HttpMethod::default(),
+            method: Method::default(),
             path: "",
             protocol_version: ProtocolVersion::default(),
             query_params: "",
@@ -92,7 +27,7 @@ impl <'r> Default for  HttpRequest<'r> {
     }
 }
 
-impl <'r> HttpRequest<'r> {
+impl <'r> Request<'r> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -112,7 +47,7 @@ impl <'r> HttpRequest<'r> {
     fn parse_request_line(&mut self, request_line: &'r str) -> Result<(), RhttpErr> {
         let mut parts = request_line.split_whitespace();
 
-        self.method = HttpMethod::from_str(
+        self.method = Method::from_str(
             parts.next()
                 .ok_or(RhttpErr::ParsingHttpMethodErr)?
         );
@@ -139,10 +74,6 @@ impl <'r> HttpRequest<'r> {
         request_headers.split(CRLF)
             .for_each(|headers| {
                 let (key, value) = headers.split_once(": ").expect("properly formatted header item"); 
-                // if key == "Content-Length" {
-                //     self.content_length = value.parse()
-                //         .expect("correct number for content length");
-                // }
                 let header_type = HeaderType::from_str(key).expect("valid header type item");
                 let header_value: HeaderValue = value.parse().unwrap();
                 self.headers.entry(header_type).or_insert(header_value);

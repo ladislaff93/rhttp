@@ -1,5 +1,7 @@
 use std::{marker::PhantomData, ops::{Deref, DerefMut}};
-use crate::{handler::Handler, http_request::HttpRequest, response::Response};
+use http::request::Request;
+
+use crate::{handler::Handler, response::Response};
 
 pub struct Endpoint {
     pub path: &'static str,
@@ -37,7 +39,7 @@ impl BoxedHandler {
 }
 
 pub trait ErasedIntoHandler {
-    fn call(&self, request:&HttpRequest) -> Response;
+    fn call(&self, request:&Request) -> Response;
 }
 
 pub struct HandlerWrapper<H, T>
@@ -53,7 +55,7 @@ impl<H, T> ErasedIntoHandler for HandlerWrapper<H, T>
 where
     H: Handler<T>,
 {
-    fn call(&self, request: &HttpRequest) -> Response {
+    fn call(&self, request: &Request) -> Response {
         self.handler.call(request)
     }
 }

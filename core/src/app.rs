@@ -1,9 +1,11 @@
 use std::io::Write;
 use std::net::TcpListener;
 use std::rc::Rc;
+use http::method::Method;
+
 use crate::endpoint::Endpoint;
 use crate::handler::Handler;
-use crate::{http_request::HttpMethod, router::Router};
+use crate::router::Router;
 
 pub struct App {
     pub router: Router,
@@ -34,7 +36,7 @@ impl App {
         }
     }
 
-    pub fn register_path<H, T>(&mut self, method: HttpMethod, path: &'static str, handler: H) 
+    pub fn register_path<H, T>(&mut self, method: Method, path: &'static str, handler: H) 
     where 
         H: Handler<T> + 'static,
         T: 'static
