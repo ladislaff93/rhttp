@@ -1,11 +1,17 @@
 use std::{collections::HashMap, io::{BufReader, Read, Write}, net::TcpStream, rc::Rc, string::FromUtf8Error};
-use http::{method::Method, request::Request, common::FINAL_CRLF};
+use http::{method::Method, response::{IntoResponse, Response}, status_code::Status};
 
-use crate::{endpoint::{BoxedHandler, Endpoint}, response::Response};
+use crate::{endpoint::{BoxedHandler, Endpoint}, incoming::Incoming};
 use std::io::BufRead;
 
 pub struct Router {
     routes: HashMap<Method, Vec<Rc<Endpoint>>>
+}
+
+impl Default for Router {
+    fn default() -> Self {
+        Router::new()
+    }
 }
 
 impl Router {
@@ -21,18 +27,10 @@ impl Router {
         self.routes.entry(method).and_modify(|v| v.push(endpoint));
     }
 
-    fn load_request<S: Read + Write>(stream: S) -> Result<String, FromUtf8Error> {
-        let mut buf_reader = BufReader::new(stream);
-        let load_buffer = buf_reader.fill_buf().unwrap().to_vec();
-        buf_reader.consume(load_buffer.len());
-
-        Ok(String::from_utf8(load_buffer)?)
-    }
-
     pub fn handle_request(&self, stream: &TcpStream) -> Response {
         if let Ok(request_parts) = Self::load_request(stream) {
-            if let Ok(mut request) = Request::from_parts(&request_parts) {
-                println!("Req: {:#?}", request);
+            if let Ok(mut request) = Incoming::from(&request_parts) {
+                println!("REQUEST: {:#?}", request);
                 if let Some(handler) = self.get_handler(&mut request) {
                     return handler.call(&request);
                 }
@@ -41,46 +39,50 @@ impl Router {
         return Self::handler_not_found();
     }
 
-    fn get_handler(&self, request: &mut Request) -> Option<&BoxedHandler> {
-        for endpoint in self.routes.get(&request.method).expect("Map of  Methods!") {
-            if !endpoint.dynamic_path {
-                if endpoint.path == request.path {
-                    return Some(&endpoint.handler);
-                }
+    fn load_request<S: Read + Write>(stream: S) -> Result<String, FromUtf8Error> {
+        let mut buf_reader = BufReader::new(stream);
+        let load_buffer = buf_reader.fill_buf().unwrap().to_vec();
+        buf_reader.consume(load_buffer.len());
+
+        String::from_utf8(load_buffer)
+    }
+
+    fn get_handler(&self, incoming: &mut Incoming) -> Option<&BoxedHandler> {
+        for endpoint in self.routes.get(&incoming.get_request_method()).expect("Map of Methods!") {
+            if !endpoint.dynamic_path && endpoint.path == incoming.get_request_path() {
+                return Some(&endpoint.handler);
             }
 
-            if self.match_dynamic_path(request, endpoint.clone()) {
+            if self.match_dynamic_path(incoming, endpoint.clone()) {
                 return Some(&endpoint.handler);
             }
         } 
-        return None;
+        None
     }
 
-    fn handler_not_found() -> Response {
-        Response {
-            body: format!("HTTP/1.1 500 Internal Server Error{FINAL_CRLF}")
-        }
+    fn handler_not_found<'rs>() -> Response<'rs> {
+        Status::InternalServerError.into_response()
     }
 
-    fn match_dynamic_path<'r>(&self, request: &mut Request<'r>, endpoint: Rc<Endpoint>) -> bool {
+    fn match_dynamic_path<'r>(&self, incoming: &mut Incoming<'r>, endpoint: Rc<Endpoint>) -> bool {
         let register_path_splitted = endpoint.path.split("/").filter(|s|!s.is_empty()).collect::<Vec<&str>>();
-        let incoming_path_splitted = request.path.split("/").filter(|s|!s.is_empty()).collect::<Vec<&str>>();
+        let incoming_path_splitted = incoming.request.request_line.path.split("/").filter(|s|!s.is_empty()).collect::<Vec<&str>>();
 
         let mut path_params: Vec<&'r str> = register_path_splitted.iter()
             .enumerate()
             .filter_map(|(idx, &sub)| {
                 if sub.starts_with("{") && sub.ends_with("}") {
-                    incoming_path_splitted.get(idx).map(|&s| s)
+                    incoming_path_splitted.get(idx).copied()
                 } else {
                     None
                 }
             }).collect();
 
-        if path_params.len() == 0 {
+        if path_params.is_empty() {
             return false;
         }
 
-        request.add_path_params(path_params.clone());
+        incoming.set_path_params(path_params.clone());
 
         register_path_splitted.iter()
             .map(|&sub| {
@@ -90,7 +92,7 @@ impl Router {
                     "/".to_owned() + sub
                 }}
             )
-            .collect::<String>() == request.path
+            .collect::<String>() == incoming.request.request_line.path
     }
 }
 

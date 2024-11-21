@@ -1,18 +1,17 @@
 use std::{fmt::Debug, str::FromStr};
-
-use http::request::Request;
 use serde::Deserialize;
+use crate::incoming::Incoming;
 
 
 pub trait FromRequest {
-    fn extract(req: &Request) -> Self;
+    fn extract(req: &Incoming) -> Self;
 }
 
 impl <T1> FromRequest for (T1,)
 where 
     T1: FromRequest,
 {
-    fn extract(req: &Request) -> Self {
+    fn extract(req: &Incoming) -> Self {
         (T1::extract(req),)
     }
 }
@@ -22,7 +21,7 @@ where
     T1: FromRequest,
     T2: FromRequest,
 {
-    fn extract(req: &Request) -> Self {
+    fn extract(req: &Incoming) -> Self {
         (T1::extract(req), T2::extract(req))
     }
 }
@@ -31,7 +30,7 @@ impl <T> FromRequest for QueryParams<T>
 where 
     T: for<'a>Deserialize<'a>
 {
-    fn extract(req: &Request) -> Self {
+    fn extract(req: &Incoming) -> Self {
         Self::from_path(req.query_params)
     }
 }
@@ -43,7 +42,7 @@ where
     T: Debug,
     T: for<'a>Deserialize<'a>
 {
-    fn extract(req: &Request) -> Self {
+    fn extract(req: &Incoming) -> Self {
         Self::from_path(req.path_params.clone())
     }
 }
@@ -56,7 +55,7 @@ where
     T: for<'a>Deserialize<'a>
 {
     fn from_path(q: &str) -> Self {
-        Self(serde_qs::from_str::<T>(&q).unwrap())
+        Self(serde_qs::from_str::<T>(q).unwrap())
     }
 }
 

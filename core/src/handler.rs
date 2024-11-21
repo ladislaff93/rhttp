@@ -1,9 +1,9 @@
-use http::request::Request;
+use http::response::{IntoResponse, Response};
 
-use crate::{from_request::FromRequest, response::{IntoResponse, Response}};
+use crate::{from_request::FromRequest, incoming::Incoming};
 
 pub trait Handler<T> {
-    fn call(&self, request: &Request) -> Response;
+    fn call(&self, incoming: &Incoming) -> Response;
 }
 
 impl <F, R> Handler<((),)> for F 
@@ -11,7 +11,7 @@ where
     F: Fn() -> R,
     R: IntoResponse
 {
-    fn call(&self, _: &Request) -> Response {
+    fn call(&self, _: &Incoming) -> Response {
         let res = self();
         res.into_response()
     }
@@ -23,8 +23,8 @@ where
     T1: FromRequest,
     R: IntoResponse
 {
-    fn call(&self, request: &Request) -> Response {
-        let args = T1::extract(&request);
+    fn call(&self, incoming: &Incoming) -> Response {
+        let args = T1::extract(incoming);
         let resp = self(args);
         resp.into_response()
     }
@@ -37,9 +37,9 @@ where
     T2: FromRequest,
     R: IntoResponse
 {
-    fn call(&self, request: &Request) -> Response {
-        let args_1 = T1::extract(&request);
-        let args_2 = T2::extract(&request);
+    fn call(&self, incoming: &Incoming) -> Response {
+        let args_1 = T1::extract(incoming);
+        let args_2 = T2::extract(incoming);
         let resp = self(args_1, args_2);
         resp.into_response()
     }

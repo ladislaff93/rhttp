@@ -5,11 +5,18 @@ use http::method::Method;
 
 use crate::endpoint::Endpoint;
 use crate::handler::Handler;
+use crate::outcoming::{Outcoming, Serialize};
 use crate::router::Router;
 
 pub struct App {
     pub router: Router,
     pub listener: Option<TcpListener>
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl App {
@@ -28,11 +35,13 @@ impl App {
     }
 
     pub fn listen(&self) {
-        for stream_res in self.listener.as_ref().unwrap().incoming() {
-            if let Ok(mut stream) = stream_res {
-                let res = self.router.handle_request(&stream);
-                stream.write_all(res.body.as_bytes()).unwrap();
-            }
+        for mut stream in self.listener.as_ref().unwrap().incoming().flatten() {
+            let res = self.router.handle_request(&stream);
+            println!("RESPONSE: {:?}", res);
+            let out = Outcoming::new(res);
+            let ser = out.serialize();
+            println!("SERIALIZE MSG: {:?}", String::from_utf8(ser.clone()));
+            stream.write_all(&ser).unwrap();
         }
     }
 

@@ -24,23 +24,12 @@ impl Method {
             "TRACE" => Self::Trace,
             "CONNECT" => Self::Connect,
             "PATCH" => Self::Patch,
-            _ => unreachable!("Any other http request method does not exists"),
-
+            _ => unreachable!("Any other http request method does not exists")
         }
     }
 
     pub fn iterator() -> std::slice::Iter<'static, Method> {
-        static HTTP_METHOD: [Method;9] = [
-            Method::Get,
-            Method::Put,
-            Method::Post,
-            Method::Delete,
-            Method::Options,
-            Method::Head,
-            Method::Trace,
-            Method::Connect,
-            Method::Patch,
-        ];
-        HTTP_METHOD.iter()
+        [Method::Get, Method::Put, Method::Post, Method::Delete, Method::Options,
+            Method::Head, Method::Trace, Method::Connect, Method::Patch].iter()
     }
 }
