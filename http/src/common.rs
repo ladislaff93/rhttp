@@ -1,5 +1,5 @@
 use core::{error, fmt};
-use std::str::Utf8Error;
+use std::{str::Utf8Error, string::FromUtf8Error};
 
 pub const FINAL_CRLF: &str = "\r\n\r\n";
 pub const CRLF: &str = "\r\n";
@@ -37,6 +37,12 @@ impl From<core::convert::Infallible> for RhttpErr {
     }
 }
 
+impl From<FromUtf8Error> for RhttpErr {
+    fn from(value: FromUtf8Error) -> Self {
+        Self::ParsingRequestErr
+    }
+}
+    
 impl From<Utf8Error> for RhttpErr {
     fn from(value: Utf8Error) -> Self {
         Self::HeaderValueErr(value)

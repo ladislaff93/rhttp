@@ -1,11 +1,11 @@
-use std::{collections::HashMap, io::{BufReader, Read, Write}, net::TcpStream, rc::Rc, string::FromUtf8Error};
-use http::{method::Method, response::{IntoResponse, Response}, status_code::Status};
-
+use std::{collections::BTreeMap, rc::Rc, str::Utf8Error, string::FromUtf8Error};
+use async_std::{io::{BufReader, Read, Write}, net::TcpStream};
+use futures::AsyncBufReadExt;
+use http::{common::RhttpErr, method::Method, response::{IntoResponse, Response}, status_code::Status};
 use crate::{endpoint::{BoxedHandler, Endpoint}, incoming::Incoming};
-use std::io::BufRead;
 
 pub struct Router {
-    routes: HashMap<Method, Vec<Rc<Endpoint>>>
+    routes: BTreeMap<Method, Vec<Rc<Endpoint>>>
 }
 
 impl Default for Router {
@@ -16,7 +16,7 @@ impl Default for Router {
 
 impl Router {
     pub fn new() -> Self {
-        let mut routes = HashMap::new();
+        let mut routes = BTreeMap::new();
         for method in Method::iterator() {
             routes.insert(*method, Vec::<Rc<Endpoint>>::new());
         }
@@ -27,27 +27,26 @@ impl Router {
         self.routes.entry(method).and_modify(|v| v.push(endpoint));
     }
 
-    pub fn handle_request(&self, stream: &TcpStream) -> Response {
-        if let Ok(request_parts) = Self::load_request(stream) {
-            if let Ok(mut request) = Incoming::from(&request_parts) {
-                println!("REQUEST: {:#?}", request);
-                if let Some(handler) = self.get_handler(&mut request) {
-                    return handler.call(&request);
-                }
-            }
-        }
-        return Self::handler_not_found();
-    }
+    // pub async fn handle_request<'r>(&self, stream: &'r mut TcpStream) -> Response {
+    //     if let Ok(request_parts) = Self::load_request(stream).await {
+    //        if let Ok(mut request) = Incoming::from(request_parts) {
+    //             println!("REQUEST: {:#?}", request);
+    //             if let Some(handler) = self.get_handler(&mut request) {
+    //                 return handler.call(&request).await;
+    //             }
+    //         }
+    //     }
+    //     return Self::handler_not_found();
+    // }
 
-    fn load_request<S: Read + Write>(stream: S) -> Result<String, FromUtf8Error> {
+    pub async fn load_request<S: Read + Write + Unpin>(stream: &mut S) -> Result<String, FromUtf8Error> {
         let mut buf_reader = BufReader::new(stream);
-        let load_buffer = buf_reader.fill_buf().unwrap().to_vec();
-        buf_reader.consume(load_buffer.len());
-
+        let load_buffer = buf_reader.fill_buf().await.unwrap().to_vec();
+        buf_reader.consume_unpin(load_buffer.len());
         String::from_utf8(load_buffer)
     }
 
-    fn get_handler(&self, incoming: &mut Incoming) -> Option<&BoxedHandler> {
+    pub fn get_handler(&self, incoming: &mut Incoming) -> Option<&BoxedHandler> {
         for endpoint in self.routes.get(&incoming.get_request_method()).expect("Map of Methods!") {
             if !endpoint.dynamic_path && endpoint.path == incoming.get_request_path() {
                 return Some(&endpoint.handler);
@@ -60,7 +59,7 @@ impl Router {
         None
     }
 
-    fn handler_not_found<'rs>() -> Response<'rs> {
+    pub fn handler_not_found<'rs>() -> Response<'rs> {
         Status::InternalServerError.into_response()
     }
 

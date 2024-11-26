@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 use crate::{headers::{HeaderType, HeaderValue}, method::Method, version::ProtocolVersion};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Request<'r> {
     pub request_line : RequestLine<'r>,
     pub headers: HashMap<HeaderType<'r>, HeaderValue>,
     pub body: &'r str
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct RequestLine<'r> {
     pub method: Method,
     pub path: &'r str,

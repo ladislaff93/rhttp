@@ -3,7 +3,7 @@ use std::{fmt::Formatter, str::FromStr};
 use crate::common::RhttpErr;
 
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Clone)]
 pub enum HeaderType<'r> {
     /// The HTTP Accept request header indicates which content types, expressed 
     /// as MIME types, the client is able to understand. 
@@ -152,7 +152,7 @@ impl <'r> HeaderType<'r> {
     }
 }
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash, Clone)]
 pub struct HeaderValue(Box<str>);
 
 impl HeaderValue {

@@ -43,4 +43,8 @@ TODO:
         - header value
         - conversions
         - pretty printing headers map
+    -add async implementation
+    -add logging tracing
+    -db support
+    -macro for creating handlers   
 */

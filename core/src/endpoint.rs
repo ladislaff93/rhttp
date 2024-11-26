@@ -1,6 +1,5 @@
-use std::{marker::PhantomData, ops::{Deref, DerefMut}};
+use std::{future::Future, marker::PhantomData, ops::{Deref, DerefMut}, pin::Pin};
 use http::response::Response;
-
 use crate::{handler::Handler, incoming::Incoming};
 
 pub struct Endpoint {
@@ -39,7 +38,7 @@ impl BoxedHandler {
 }
 
 pub trait ErasedIntoHandler {
-    fn call(&self, request:&Incoming) -> Response;
+    fn call<'r>(&'r self, request: &'r Incoming<'r>) -> Pin<Box<dyn Future<Output = Response>+'r>>;
 }
 
 pub struct HandlerWrapper<H, T>
@@ -55,8 +54,8 @@ impl<H, T> ErasedIntoHandler for HandlerWrapper<H, T>
 where
     H: Handler<T>
 {
-    fn call(&self, request: &Incoming) -> Response {
-        self.handler.call(request)
+    fn call<'r>(&'r self, request: &'r Incoming<'r>) -> Pin<Box<dyn Future<Output = Response>+'r>> {
+        Box::pin(self.handler.call(&request))
     }
 }
 

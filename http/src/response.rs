@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use crate::{common::RhttpErr, headers::{HeaderType, HeaderValue}, status_code::Status, version::ProtocolVersion};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Response<'rs> {
     pub status_line: StatusLine<'rs>,
-    pub headers: HashMap<HeaderType<'rs>, HeaderValue>,
+    pub headers: BTreeMap<HeaderType<'rs>, HeaderValue>,
     pub body: String
 }
 
@@ -30,10 +30,10 @@ impl <'rs> Default for Response<'rs> {
     fn default() -> Self {
         let mut zelf = Self {
             status_line: StatusLine::default(),
-            headers: HashMap::default(),
+            headers: BTreeMap::default(),
             body: String::default()
         };
-        zelf.add_header(HeaderType::Date, Utc::now().format("%a, %d %b %Y %H:%M:%S").to_string() + " GTM");
+        zelf.add_header(HeaderType::Date, Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string());
         zelf
     }
 }
@@ -42,7 +42,7 @@ pub trait IntoResponse {
     fn into_response<'rs>(self) -> Response<'rs>;
 }
 
-pub struct Html<T>(T);
+pub struct Html(pub String);
 
 impl <'rs> Response<'rs> {
     fn add_header<T>(&mut self, key: HeaderType<'rs>, val: T)
@@ -59,11 +59,14 @@ impl <'rs> Response<'rs> {
     }
 }
 
-// impl <T> IntoResponse for Html<T> {
-//     fn into_response<'rs>(self) -> Response<'rs> {
-//        let resp = Response::default(); 
-//     }
-// }
+impl IntoResponse for Html {
+    fn into_response<'rs>(self) -> Response<'rs> {
+        let mut resp = Response::default(); 
+        resp.body = self.0; 
+        resp.add_header(HeaderType::ContentType, mime::TEXT_HTML_UTF_8.as_ref());
+        resp
+    }
+}
 
 impl IntoResponse for () {
     fn into_response<'rs>(self) -> Response<'rs> {
@@ -96,7 +99,7 @@ impl IntoResponse for &str {
     fn into_response<'rs>(self) -> Response<'rs> {
         let mut resp = Response {
             status_line: StatusLine::default(),
-            headers: HashMap::default(),
+            headers: BTreeMap::default(),
             body: self.to_string()
         };
         resp.add_header(HeaderType::ContentLength, self.len());
@@ -111,7 +114,7 @@ impl IntoResponse for String {
     fn into_response<'rs>(self) -> Response<'rs> {
         let mut resp = Response {
             status_line: StatusLine::default(),
-            headers: HashMap::default(),
+            headers: BTreeMap::default(),
             body: self.to_string()
         };
         resp.add_header(HeaderType::ContentLength, self.len());

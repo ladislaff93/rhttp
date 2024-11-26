@@ -1,46 +1,56 @@
+use std::future::Future;
 use http::response::{IntoResponse, Response};
-
 use crate::{from_request::FromRequest, incoming::Incoming};
 
+
 pub trait Handler<T> {
-    fn call(&self, incoming: &Incoming) -> Response;
+    fn call(&self, incoming: &Incoming) -> impl Future<Output=Response>;
 }
 
-impl <F, R> Handler<((),)> for F 
+impl <F, Fut, R> Handler<((),)> for F 
 where
-    F: Fn() -> R,
+    F: Fn() -> Fut,
+    Fut: Future<Output=R>,
     R: IntoResponse
 {
-    fn call(&self, _: &Incoming) -> Response {
-        let res = self();
-        res.into_response()
+    fn call(&self, _: &Incoming) -> impl Future<Output=Response> {
+        async move {
+            let res = self().await;
+            res.into_response()
+        }
     }
 }
 
-impl <F, T1, R> Handler<(T1,)> for F 
+impl <F, Fut, T1, R> Handler<(T1,)> for F 
 where 
-    F: Fn(T1) -> R,
+    F: Fn(T1) -> Fut,
     T1: FromRequest,
+    Fut: Future<Output=R>,
     R: IntoResponse
 {
-    fn call(&self, incoming: &Incoming) -> Response {
-        let args = T1::extract(incoming);
-        let resp = self(args);
-        resp.into_response()
+    fn call(&self, incoming: &Incoming) -> impl Future<Output=Response> {
+        async move {
+            let args = T1::extract(incoming);
+            let resp = self(args).await;
+            resp.into_response()
+        }
     }
 }
 
-impl <F, T1, T2, R> Handler<(T1, T2,)> for F 
+impl <F, Fut, T1, T2, R> Handler<(T1, T2,)> for F 
 where 
-    F: Fn(T1, T2) -> R,
+    F: Fn(T1, T2) -> Fut,
     T1: FromRequest,
     T2: FromRequest,
+    Fut: Future<Output=R>,
     R: IntoResponse
 {
-    fn call(&self, incoming: &Incoming) -> Response {
-        let args_1 = T1::extract(incoming);
-        let args_2 = T2::extract(incoming);
-        let resp = self(args_1, args_2);
-        resp.into_response()
+    fn call(&self, incoming: &Incoming) -> impl Future<Output=Response> {
+        async move {
+            let args_1 = T1::extract(incoming);
+            let args_2 = T2::extract(incoming);
+            let resp = self(args_1, args_2).await;
+            resp.into_response()
+        }
     }
 }

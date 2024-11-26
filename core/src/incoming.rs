@@ -1,7 +1,7 @@
 use http::{common::{RhttpErr, CRLF, FINAL_CRLF}, headers::HeaderType, method::Method, request::Request, version::ProtocolVersion};
 use serde_json::Value;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Incoming<'r> {
     pub request: Request<'r>,
     pub query_params: &'r str,
