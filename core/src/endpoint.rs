@@ -55,7 +55,7 @@ where
     H: Handler<T>
 {
     fn call<'r>(&'r self, request: &'r Incoming<'r>) -> Pin<Box<dyn Future<Output = Response>+'r>> {
-        Box::pin(self.handler.call(&request))
+        Box::pin(self.handler.call(request))
     }
 }
 

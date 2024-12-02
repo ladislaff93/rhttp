@@ -46,7 +46,7 @@ pub struct Html(pub String);
 
 impl <'rs> Response<'rs> {
     fn add_header<T>(&mut self, key: HeaderType<'rs>, val: T)
-    where 
+    where
         T: TryInto<HeaderValue, Error=RhttpErr>
     {
         let header_value = val.try_into().unwrap();
@@ -61,8 +61,10 @@ impl <'rs> Response<'rs> {
 
 impl IntoResponse for Html {
     fn into_response<'rs>(self) -> Response<'rs> {
-        let mut resp = Response::default(); 
-        resp.body = self.0; 
+        let mut resp = Response{
+            body: self.0,
+            .. Response::default()
+        };
         resp.add_header(HeaderType::ContentType, mime::TEXT_HTML_UTF_8.as_ref());
         resp
     }
@@ -84,9 +86,9 @@ impl IntoResponse for Status {
     }
 }
 
-impl <T> IntoResponse for (Status, T) 
-where 
-    T: IntoResponse 
+impl <T> IntoResponse for (Status, T)
+where
+    T: IntoResponse
 {
     fn into_response<'rs>(self) -> Response<'rs> {
         let mut resp = self.1.into_response();
@@ -106,7 +108,7 @@ impl IntoResponse for &str {
         resp.add_header(HeaderType::ContentType, mime::TEXT_PLAIN_UTF_8.as_ref());
 
         resp
-         
+
     }
 }
 

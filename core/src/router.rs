@@ -1,11 +1,14 @@
-use std::{collections::BTreeMap, rc::Rc, str::Utf8Error, string::FromUtf8Error};
-use async_std::{io::{BufReader, Read, Write}, net::TcpStream};
+use futures::StreamExt;
+use futures::AsyncWriteExt;
+use std::{collections::BTreeMap, rc::Rc, string::FromUtf8Error};
+use async_std::{io::{BufReader, Read, Write}, net::TcpListener};
 use futures::AsyncBufReadExt;
-use http::{common::RhttpErr, method::Method, response::{IntoResponse, Response}, status_code::Status};
-use crate::{endpoint::{BoxedHandler, Endpoint}, incoming::Incoming};
+use http::{method::Method, response::{IntoResponse, Response}, status_code::Status};
+use crate::{endpoint::{BoxedHandler, Endpoint}, handler::Handler, incoming::Incoming, outcoming::{Outcoming, Serialize}};
 
 pub struct Router {
-    routes: BTreeMap<Method, Vec<Rc<Endpoint>>>
+    routes: BTreeMap<Method, Vec<Rc<Endpoint>>>,
+    listener: Option<TcpListener>
 }
 
 impl Default for Router {
@@ -20,12 +23,22 @@ impl Router {
         for method in Method::iterator() {
             routes.insert(*method, Vec::<Rc<Endpoint>>::new());
         }
-        Self {routes}
+        Self {routes, listener: None}
     }
 
-    pub fn register_path(&mut self, method: Method, endpoint: Rc<Endpoint>) {
-        self.routes.entry(method).and_modify(|v| v.push(endpoint));
+    pub fn register_path<H, T>(&mut self, method: Method, path: &'static str, handler: H) 
+    where 
+        H: Handler<T> + 'static,
+        T: 'static
+    {
+        self.routes.entry(method).and_modify(|v| v.push(Rc::new(
+            Endpoint::new(
+                path,
+                handler
+            )
+        )));
     }
+
 
     // pub async fn handle_request<'r>(&self, stream: &'r mut TcpStream) -> Response {
     //     if let Ok(request_parts) = Self::load_request(stream).await {
@@ -38,6 +51,32 @@ impl Router {
     //     }
     //     return Self::handler_not_found();
     // }
+
+    pub async fn bind_address(&mut self, address: &str) {
+        if self.listener.is_none() {
+            self.listener = Some(TcpListener::bind(address)
+                .await
+                .expect("Should bind to empty port! Is port empty?"));
+        }
+    }
+
+    pub async fn listen(&self) {
+        while let Some(Ok(mut stream)) = self.listener.as_ref().unwrap().incoming().next().await {
+            let request_parts = Router::load_request(&mut stream).await.expect("Valid utf8 coded message from client");
+            let mut request = Incoming::from(&request_parts).unwrap();
+            // println!("REQUEST: {:#?}", request);
+            let res = if let Some(handler) = self.get_handler(&mut request) {
+                 handler.call(&request).await
+            } else {
+                Router::handler_not_found()
+            };
+            // println!("RESPONSE: {:?}", res);
+            let out = Outcoming::new(res);
+            let ser = out.serialize();
+            // println!("SERIALIZE MSG: {:?}", String::from_utf8(ser.clone()));
+            stream.write_all(&ser).await.unwrap();
+        }
+    }
 
     pub async fn load_request<S: Read + Write + Unpin>(stream: &mut S) -> Result<String, FromUtf8Error> {
         let mut buf_reader = BufReader::new(stream);

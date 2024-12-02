@@ -1,5 +1,4 @@
-#![warn(clippy::pedantic)]
-use core::{app::App, from_request::{PathParam, QueryParams}};
+use core::{from_request::{PathParam, QueryParams}, router::Router};
 use http::{method::Method, response::Html};
 use serde::Deserialize;
 
@@ -37,7 +36,7 @@ async fn handle_get_path_params_with_two(PathParam(order_id): PathParam<usize>, 
 
 #[async_std::main]
 async fn main() {
-    let mut app = App::new();
+    let mut app = Router::new();
     app.bind_address("127.0.0.1:8080").await;
 
     // register handlers

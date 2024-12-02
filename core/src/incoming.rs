@@ -10,8 +10,8 @@ pub struct Incoming<'r> {
 
 impl <'r> Incoming<'r> {
     pub fn from(request_line: &'r str) -> Result<Self, RhttpErr> {
-        println!("RAW r: {}", request_line);
-        println!("----------------------");
+        // println!("RAW r: {}", request_line);
+        // println!("----------------------");
         let mut incoming = Self::default();
         let (first_line, other) = request_line.split_once(CRLF).ok_or(RhttpErr::ParsingRequestErr)?;
         let (request_headers, request_body) = other.split_once(FINAL_CRLF).ok_or(RhttpErr::ParsingRequestErr)?;
@@ -78,7 +78,7 @@ impl <'r> Incoming<'r> {
             if length.to_str().unwrap().parse::<usize>().unwrap() != 0 {
                 self.request.add_body(request_body);
                 let v: Value = serde_json::from_str(self.request.body).unwrap();
-                println!("Request body: {:#?}", v);
+                // println!("Request body: {:#?}", v);
             }
         }
     }
