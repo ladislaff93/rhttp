@@ -1,3 +1,4 @@
+use async_std::net::TcpStream;
 use futures::StreamExt;
 use futures::AsyncWriteExt;
 use std::{collections::BTreeMap, rc::Rc, string::FromUtf8Error};
@@ -26,8 +27,8 @@ impl Router {
         Self {routes, listener: None}
     }
 
-    pub fn register_path<H, T>(&mut self, method: Method, path: &'static str, handler: H) 
-    where 
+    pub fn register_path<H, T>(&mut self, method: Method, path: &'static str, handler: H)
+    where
         H: Handler<T> + 'static,
         T: 'static
     {
@@ -39,19 +40,6 @@ impl Router {
         )));
     }
 
-
-    // pub async fn handle_request<'r>(&self, stream: &'r mut TcpStream) -> Response {
-    //     if let Ok(request_parts) = Self::load_request(stream).await {
-    //        if let Ok(mut request) = Incoming::from(request_parts) {
-    //             println!("REQUEST: {:#?}", request);
-    //             if let Some(handler) = self.get_handler(&mut request) {
-    //                 return handler.call(&request).await;
-    //             }
-    //         }
-    //     }
-    //     return Self::handler_not_found();
-    // }
-
     pub async fn bind_address(&mut self, address: &str) {
         if self.listener.is_none() {
             self.listener = Some(TcpListener::bind(address)
@@ -60,21 +48,25 @@ impl Router {
         }
     }
 
+    async fn handle_request(&self, stream: &mut TcpStream) {
+        let request_parts = Router::load_request(stream).await.expect("Valid utf8 coded message from client");
+        let mut request = Incoming::from(&request_parts).unwrap();
+        // println!("REQUEST: {:#?}", request);
+        let res = if let Some(handler) = self.get_handler(&mut request) {
+             handler.call(&request).await
+        } else {
+            Router::handler_not_found()
+        };
+        // println!("RESPONSE: {:?}", res);
+        let out = Outcoming::new(res);
+        let ser = out.serialize();
+        // println!("SERIALIZE MSG: {:?}", String::from_utf8(ser.clone()));
+        stream.write_all(&ser).await.unwrap();
+    }
+
     pub async fn listen(&self) {
         while let Some(Ok(mut stream)) = self.listener.as_ref().unwrap().incoming().next().await {
-            let request_parts = Router::load_request(&mut stream).await.expect("Valid utf8 coded message from client");
-            let mut request = Incoming::from(&request_parts).unwrap();
-            // println!("REQUEST: {:#?}", request);
-            let res = if let Some(handler) = self.get_handler(&mut request) {
-                 handler.call(&request).await
-            } else {
-                Router::handler_not_found()
-            };
-            // println!("RESPONSE: {:?}", res);
-            let out = Outcoming::new(res);
-            let ser = out.serialize();
-            // println!("SERIALIZE MSG: {:?}", String::from_utf8(ser.clone()));
-            stream.write_all(&ser).await.unwrap();
+            self.handle_request(&mut stream).await;
         }
     }
 
@@ -94,7 +86,7 @@ impl Router {
             if self.match_dynamic_path(incoming, endpoint.clone()) {
                 return Some(&endpoint.handler);
             }
-        } 
+        }
         None
     }
 
@@ -204,7 +196,7 @@ mod tests {
     //
     //     router.register_path(
     //         Method::Get,
-    //         Rc::new(Endpoint::new("/", 
+    //         Rc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
     //                     "Register Get Method on /".to_string()
