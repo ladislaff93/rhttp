@@ -1,66 +1,73 @@
-use std::{future::Future, marker::PhantomData, ops::{Deref, DerefMut}, pin::Pin};
-use http::response::Response;
 use crate::{handler::Handler, incoming::Incoming};
+use http::{common::RhttpError, response::Response};
+use std::{
+    future::Future,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+    pin::Pin,
+};
 
-pub struct Endpoint {
-    pub path: &'static str,
-    pub handler: BoxedHandler,
-    pub dynamic_path: bool
+pub(crate) struct Endpoint {
+    pub handler: BoxedHandler
 }
 
 impl Endpoint {
-    pub fn new<H, T>(path: &'static str, handler: H) -> Self 
+    pub fn new<H, T>(handler: H) -> Self
     where
-        H: Handler<T> + 'static,
-        T: 'static,
+        H: Handler<T> + Send + Sync + 'static,
+        T: 'static + Send + Sync,
     {
-        let mut dynamic_path = false; 
-        if path.contains("{") && path.contains("}") {
-           dynamic_path = true; 
+        Self {
+            handler: BoxedHandler::from_handler(handler)
         }
-        Self {path, handler: BoxedHandler::from_handler(handler), dynamic_path} 
     }
 }
 
-pub struct BoxedHandler(Box<dyn ErasedIntoHandler>);
+pub struct BoxedHandler(Box<dyn ErasedIntoHandler + Send + Sync>);
 
 impl BoxedHandler {
     pub fn from_handler<H, T>(handler: H) -> Self
     where
-        H: Handler<T> + 'static,
-        T: 'static,
+        H: Handler<T> + Send + Sync + 'static,
+        T: 'static + Send + Sync,
     {
         Self(Box::new(HandlerWrapper {
             handler,
-            marker:PhantomData
+            marker: PhantomData,
         }))
     }
 }
 
 pub trait ErasedIntoHandler {
-    fn call<'r>(&'r self, request: &'r Incoming<'r>) -> Pin<Box<dyn Future<Output = Response>+'r>>;
+    fn call<'r>(
+        &'r self,
+        request: Incoming,
+    ) -> Pin<Box<dyn Future<Output = Result<Response<'r>, RhttpError>> + 'r + Send + Sync>>;
 }
 
 pub struct HandlerWrapper<H, T>
 where
-    H: Handler<T>,
-    T: 'static 
+    H: Handler<T> + Send + Sync,
+    T: 'static,
 {
     pub(crate) handler: H,
-    marker: std::marker::PhantomData<T>
+    marker: std::marker::PhantomData<T>,
 }
 
 impl<H, T> ErasedIntoHandler for HandlerWrapper<H, T>
 where
-    H: Handler<T>
+    H: Handler<T> + Send + Sync,
 {
-    fn call<'r>(&'r self, request: &'r Incoming<'r>) -> Pin<Box<dyn Future<Output = Response>+'r>> {
+    fn call<'r>(
+        &'r self,
+        request: Incoming,
+    ) -> Pin<Box<dyn Future<Output = Result<Response<'r>, RhttpError>> + 'r + Send + Sync>> {
         Box::pin(self.handler.call(request))
     }
 }
 
 impl Deref for BoxedHandler {
-    type Target = Box<dyn ErasedIntoHandler>;
+    type Target = Box<dyn ErasedIntoHandler + Send + Sync>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

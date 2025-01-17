@@ -1,15 +1,31 @@
-use async_std::net::TcpStream;
-use futures::StreamExt;
-use futures::AsyncWriteExt;
-use std::{collections::BTreeMap, rc::Rc, string::FromUtf8Error};
-use async_std::{io::{BufReader, Read, Write}, net::TcpListener};
+use crate::{
+    endpoint::{BoxedHandler, Endpoint},
+    handler::{self, Handler},
+    incoming::Incoming, radix_tree::RadixTree,
+};
+use async_std::{
+    io::{BufReader, Read, Write},
+    net::TcpListener,
+};
 use futures::AsyncBufReadExt;
-use http::{method::Method, response::{IntoResponse, Response}, status_code::Status};
-use crate::{endpoint::{BoxedHandler, Endpoint}, handler::Handler, incoming::Incoming, outcoming::{Outcoming, Serialize}};
+use futures::AsyncWriteExt;
+use futures::StreamExt;
+use http::common::RhttpError;
+use http::common::RhttpError::{
+    HandlerNotFound, ListenerDefined, ListenerNotDefined, ParsingRequestErr,
+};
+use http::{
+    method::Method,
+    response::{IntoResponse, Response},
+    status_code::Status,
+};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 pub struct Router {
-    routes: BTreeMap<Method, Vec<Rc<Endpoint>>>,
-    listener: Option<TcpListener>
+    routes: HashMap<Method, RadixTree>,
+    handlers: HashMap<String, Arc<Endpoint>>,
+    listener: Option<TcpListener>,
 }
 
 impl Default for Router {
@@ -20,110 +36,142 @@ impl Default for Router {
 
 impl Router {
     pub fn new() -> Self {
-        let mut routes = BTreeMap::new();
+        let mut routes = HashMap::new();
         for method in Method::iterator() {
-            routes.insert(*method, Vec::<Rc<Endpoint>>::new());
+            routes.insert(*method, RadixTree::new());
         }
-        Self {routes, listener: None}
+        Self {
+            routes,
+            handlers: HashMap::new(),
+            listener: None,
+        }
     }
 
     pub fn register_path<H, T>(&mut self, method: Method, path: &'static str, handler: H)
     where
-        H: Handler<T> + 'static,
-        T: 'static
+        H: Handler<T> + Send + Sync + 'static,
+        T: Send + Sync + 'static,
     {
-        self.routes.entry(method).and_modify(|v| v.push(Rc::new(
-            Endpoint::new(
-                path,
-                handler
-            )
-        )));
+        let handler_signature = format!("{}{}",method.to_str(), path);
+        let new_endpoint = Arc::new(Endpoint::new(handler));
+        self.handlers.insert(handler_signature.clone(), new_endpoint);
+        self.routes
+            .get_mut(&method)
+            .expect("Method are already pre-populated!")
+            .insert(path, handler_signature);
     }
 
-    pub async fn bind_address(&mut self, address: &str) {
+    pub async fn bind_address(&mut self, address: &str) -> Result<(), RhttpError> {
         if self.listener.is_none() {
-            self.listener = Some(TcpListener::bind(address)
-                .await
-                .expect("Should bind to empty port! Is port empty?"));
-        }
-    }
-
-    async fn handle_request(&self, stream: &mut TcpStream) {
-        let request_parts = Router::load_request(stream).await.expect("Valid utf8 coded message from client");
-        let mut request = Incoming::from(&request_parts).unwrap();
-        // println!("REQUEST: {:#?}", request);
-        let res = if let Some(handler) = self.get_handler(&mut request) {
-             handler.call(&request).await
+            self.listener = Some(TcpListener::bind(address).await?);
+            Ok(())
         } else {
-            Router::handler_not_found()
-        };
-        // println!("RESPONSE: {:?}", res);
-        let out = Outcoming::new(res);
-        let ser = out.serialize();
-        // println!("SERIALIZE MSG: {:?}", String::from_utf8(ser.clone()));
-        stream.write_all(&ser).await.unwrap();
-    }
-
-    pub async fn listen(&self) {
-        while let Some(Ok(mut stream)) = self.listener.as_ref().unwrap().incoming().next().await {
-            self.handle_request(&mut stream).await;
+            Err(ListenerDefined)
         }
     }
 
-    pub async fn load_request<S: Read + Write + Unpin>(stream: &mut S) -> Result<String, FromUtf8Error> {
+    async fn handle_request<S: Read + Write + Unpin>(
+        &self,
+        stream: &mut S,
+    ) -> Result<Response, RhttpError> {
+        let request_parts = Self::load_request(stream).await?;
+        let mut request = Incoming::from(request_parts)?;
+        let handler = self.get_handler(&mut request)?;
+        handler.call(request).await
+    }
+
+    pub async fn listen(&self) -> Result<(), RhttpError> {
+        let listener = self.listener.as_ref().ok_or(ListenerNotDefined)?;
+
+        while let Some(Ok(mut stream)) = listener.incoming().next().await {
+            let response = match self.handle_request(&mut stream).await {
+                Ok(r) => r,
+                Err(err) => match err {
+                    HandlerNotFound(_) => Status::BadRequest.into_response(),
+                    _ => Status::InternalServerError.into_response(),
+                },
+            };
+            let ser = response.serialize();
+            stream.write_all(&ser).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn load_request<S: Read + Write + Unpin>(
+        stream: &mut S,
+    ) -> Result<String, RhttpError> {
         let mut buf_reader = BufReader::new(stream);
-        let load_buffer = buf_reader.fill_buf().await.unwrap().to_vec();
-        buf_reader.consume_unpin(load_buffer.len());
-        String::from_utf8(load_buffer)
-    }
-
-    pub fn get_handler(&self, incoming: &mut Incoming) -> Option<&BoxedHandler> {
-        for endpoint in self.routes.get(&incoming.get_request_method()).expect("Map of Methods!") {
-            if !endpoint.dynamic_path && endpoint.path == incoming.get_request_path() {
-                return Some(&endpoint.handler);
-            }
-
-            if self.match_dynamic_path(incoming, endpoint.clone()) {
-                return Some(&endpoint.handler);
-            }
+        if let Ok(load_buffer) = buf_reader.fill_buf().await {
+            let load_buffer = load_buffer.to_vec();
+            buf_reader.consume_unpin(load_buffer.len());
+            Ok(String::from_utf8(load_buffer)?)
+        } else {
+            Err(ParsingRequestErr(String::new()))
         }
-        None
     }
 
-    pub fn handler_not_found<'rs>() -> Response<'rs> {
-        Status::InternalServerError.into_response()
+    pub fn get_handler(&self, incoming: &mut Incoming) -> Result<&BoxedHandler, RhttpError> {
+        let tree = self
+            .routes
+            .get(incoming.get_request_method())
+            .expect("Map of Methods!");
+
+        // let handler_signature = tree.find(incoming.get_request_path()).unwrap();
+        let handler = self.handlers.get("").expect("");
+
+        return Ok(&handler.handler);
+
+        Err(HandlerNotFound(format!(
+            "No handler found for path {} and method {:?}",
+            incoming.get_request_path(),
+            incoming.get_request_method()
+        )))
     }
 
-    fn match_dynamic_path<'r>(&self, incoming: &mut Incoming<'r>, endpoint: Rc<Endpoint>) -> bool {
-        let register_path_splitted = endpoint.path.split("/").filter(|s|!s.is_empty()).collect::<Vec<&str>>();
-        let incoming_path_splitted = incoming.request.request_line.path.split("/").filter(|s|!s.is_empty()).collect::<Vec<&str>>();
-
-        let mut path_params: Vec<&'r str> = register_path_splitted.iter()
-            .enumerate()
-            .filter_map(|(idx, &sub)| {
-                if sub.starts_with("{") && sub.ends_with("}") {
-                    incoming_path_splitted.get(idx).copied()
-                } else {
-                    None
-                }
-            }).collect();
-
-        if path_params.is_empty() {
-            return false;
-        }
-
-        incoming.set_path_params(path_params.clone());
-
-        register_path_splitted.iter()
-            .map(|&sub| {
-                if sub.starts_with("{") && sub.ends_with("}") {
-                    "/".to_owned() + path_params.remove(0)
-                } else {
-                    "/".to_owned() + sub
-                }}
-            )
-            .collect::<String>() == incoming.request.request_line.path
-    }
+    // fn match_dynamic_path(&self, incoming: &mut Incoming, endpoint: Arc<Endpoint>) -> bool {
+    //     let register_path_splitted = endpoint
+    //         .path
+    //         .split("/")
+    //         .filter(|s| !s.is_empty())
+    //         .collect::<Vec<&str>>();
+    //     let incoming_path_splitted = incoming
+    //         .request
+    //         .request_line
+    //         .path
+    //         .split("/")
+    //         .filter(|s| !s.is_empty())
+    //         .collect::<Vec<&str>>();
+    //
+    //     let mut path_params: Vec<String> = register_path_splitted
+    //         .iter()
+    //         .enumerate()
+    //         .filter_map(|(idx, &sub)| {
+    //             if sub.starts_with("{") && sub.ends_with("}") {
+    //                 Some(incoming_path_splitted.get(idx).unwrap().to_string())
+    //             } else {
+    //                 None
+    //             }
+    //         })
+    //         .collect();
+    //
+    //     if path_params.is_empty() {
+    //         return false;
+    //     }
+    //
+    //     incoming.set_path_params(path_params.clone());
+    //
+    //     register_path_splitted
+    //         .iter()
+    //         .map(|&sub| {
+    //             if sub.starts_with("{") && sub.ends_with("}") {
+    //                 "/".to_owned() + &path_params.remove(0)
+    //             } else {
+    //                 "/".to_owned() + sub
+    //             }
+    //         })
+    //         .collect::<String>()
+    //         == incoming.request.request_line.path
+    // }
 }
 
 #[cfg(test)]
@@ -131,17 +179,26 @@ mod tests {
     // use std::collections::VecDeque;
     // use crate::from_request::PathParam;
     //
-    // use super::*;
+    use super::*;
     //
-    // fn setup_router() -> Router {
-    //     let new_router = Router::new();
-    //     return new_router;
-    // }
-    //
+    fn setup_router() -> Router {
+        let new_router = Router::new();
+        return new_router;
+    }
+
+    #[async_std::test]
+    async fn test_double_bind_listener() {
+        let mut router = setup_router();
+        assert!(router.listener.is_none());
+        router.bind_address("127.0.0.1:8080").await;
+        assert!(router.listener.is_some());
+        router.bind_address("127.0.0.1:8080").await;
+    }
+
     // #[test]
     // fn test_get_dynamic_path_register_one_find_one() {
     //     let mut router = setup_router();
-    //     let endpoint = Rc::new(Endpoint::new("/{r}", BoxedIntoRoute::from_handler(|| -> &str {"Register Get Method on /{r}"})));
+    //     let endpoint = Arc::new(Endpoint::new("/{r}", BoxedIntoRoute::from_handler(|| -> &str {"Register Get Method on /{r}"})));
     //     router.register_path(Method::Get, endpoint.clone());
     //     let mut request = Request::new(String::from("GET /hello HTTP/1.1").bytes().collect::<VecDeque<u8>>());
     //     assert_eq!(endpoint.dynamic_path, true);
@@ -151,7 +208,7 @@ mod tests {
     // #[test]
     // fn test_get_dynamic_path_register_not_dynamic_find_none() {
     //     let mut router = setup_router();
-    //     let endpoint = Rc::new(Endpoint::new("/", BoxedIntoRoute::from_handler(|| -> &str {"Register Get Method on /"})));
+    //     let endpoint = Arc::new(Endpoint::new("/", BoxedIntoRoute::from_handler(|| -> &str {"Register Get Method on /"})));
     //     router.register_path(Method::Get, endpoint.clone());
     //     let mut request = Request::new(String::from("GET / HTTP/1.1").bytes().collect::<VecDeque<u8>>());
     //     assert_eq!(endpoint.dynamic_path, false);
@@ -161,7 +218,7 @@ mod tests {
     // #[test]
     // fn test_get_dynamic_path_register_dynamic_multiple_arguments_find_one() {
     //     let mut router = setup_router();
-    //     let endpoint = Rc::new(Endpoint::new("/{a}/{b}/{c}/{d}/{e}/{f}", BoxedIntoRoute::from_handler(|| -> &str {"Register Get Method on /{a}/{b}/{c}/{d}/{e}/{f}"})));
+    //     let endpoint = Arc::new(Endpoint::new("/{a}/{b}/{c}/{d}/{e}/{f}", BoxedIntoRoute::from_handler(|| -> &str {"Register Get Method on /{a}/{b}/{c}/{d}/{e}/{f}"})));
     //     router.register_path(Method::Get, endpoint.clone());
     //     let mut request = Request::new(String::from("GET /1/2/3/4/5/6 HTTP/1.1").bytes().collect::<VecDeque<u8>>());
     //     assert_eq!(endpoint.dynamic_path, true);
@@ -171,7 +228,7 @@ mod tests {
     // #[test]
     // fn test_get_handler() {
     //     let mut router = setup_router();
-    //     let endpoint = Rc::new(Endpoint::new("/", BoxedIntoRoute::from_handler(|| -> &str {"Register Get Method on /"})));
+    //     let endpoint = Arc::new(Endpoint::new("/", BoxedIntoRoute::from_handler(|| -> &str {"Register Get Method on /"})));
     //     router.register_path(Method::Get, endpoint.clone());
     //     let mut request = Request::new(String::from("GET / HTTP/1.1").bytes().collect::<VecDeque<u8>>());
     //     let handler = router.get_handler(&mut request);
@@ -181,7 +238,7 @@ mod tests {
     // #[test]
     // fn test_get_handler_multiple_endoints_call_correct() {
     //     let mut router = setup_router();
-    //     let endpoint = Rc::new(
+    //     let endpoint = Arc::new(
     //         Endpoint::new("/{r}", BoxedIntoRoute::from_handler(|PathParam(r): PathParam<String>| -> String {format!("Register Get Method on /{r}")}))
     //     );
     //     router.register_path(Method::Get, endpoint.clone());
@@ -196,7 +253,7 @@ mod tests {
     //
     //     router.register_path(
     //         Method::Get,
-    //         Rc::new(Endpoint::new("/",
+    //         Arc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
     //                     "Register Get Method on /".to_string()
@@ -206,7 +263,7 @@ mod tests {
     //     );
     //     router.register_path(
     //         Method::Post,
-    //         Rc::new(Endpoint::new("/",
+    //         Arc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
     //                     "Register Post Method on /".to_string()
@@ -216,7 +273,7 @@ mod tests {
     //     );
     //     router.register_path(
     //         Method::Delete,
-    //         Rc::new(Endpoint::new("/",
+    //         Arc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
     //                     "Register Delete Method on /".to_string()
@@ -226,7 +283,7 @@ mod tests {
     //     );
     //     router.register_path(
     //         Method::Put,
-    //         Rc::new(Endpoint::new("/",
+    //         Arc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
     //                     "Register Put Method on /".to_string()
@@ -236,7 +293,7 @@ mod tests {
     //     );
     //     router.register_path(
     //         Method::Options,
-    //         Rc::new(Endpoint::new("/",
+    //         Arc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
     //                     "Register Options Method on /".to_string()
@@ -246,7 +303,7 @@ mod tests {
     //     );
     //     router.register_path(
     //         Method::Head,
-    //         Rc::new(Endpoint::new("/",
+    //         Arc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
     //                     "Register Head Method on /".to_string()
@@ -256,7 +313,7 @@ mod tests {
     //     );
     //     router.register_path(
     //         Method::Trace,
-    //         Rc::new(Endpoint::new("/",
+    //         Arc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
     //                     "Register Trace Method on /".to_string()
@@ -266,7 +323,7 @@ mod tests {
     //     );
     //     router.register_path(
     //         Method::Connect,
-    //         Rc::new(Endpoint::new("/",
+    //         Arc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
     //                     "Register Connect Method on /".to_string()
@@ -276,7 +333,7 @@ mod tests {
     //     );
     //     router.register_path(
     //         Method::Patch,
-    //         Rc::new(Endpoint::new("/",
+    //         Arc::new(Endpoint::new("/",
     //             BoxedIntoRoute::from_handler(
     //                 || -> String {
     //                     "Register Patch Method on /".to_string()

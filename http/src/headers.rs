@@ -1,10 +1,11 @@
 use core::str;
 use std::{fmt::Formatter, str::FromStr};
-use crate::common::RhttpErr;
+
+use crate::common::RhttpError;
 
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Clone)]
-pub enum HeaderType<'r> {
+pub enum HeaderType {
     /// The HTTP Accept request header indicates which content types, expressed 
     /// as MIME types, the client is able to understand. 
     ///
@@ -86,10 +87,10 @@ pub enum HeaderType<'r> {
     /// The HTTP Date request and response header contains the date and 
     /// time at which the message originated.
     Date,
-    Custom(&'r str)
+    Custom(String)
 }
 
-impl std::fmt::Debug for HeaderType<'_> {
+impl std::fmt::Debug for HeaderType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let str_version = match self {
             HeaderType::Accept => "Accept",
@@ -106,7 +107,7 @@ impl std::fmt::Debug for HeaderType<'_> {
     }
 }
 
-impl std::fmt::Display for HeaderType<'_> {
+impl std::fmt::Display for HeaderType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let str_version = match self {
             HeaderType::Accept => "Accept",
@@ -123,9 +124,9 @@ impl std::fmt::Display for HeaderType<'_> {
     }
 }
 
-impl <'r> HeaderType<'r> {
-    pub fn from_str(s: &'r str) -> Result<Self, RhttpErr> {
-        if let Ok(std_header) = HeaderType::try_into_std(s) {
+impl <'r> HeaderType {
+    pub fn from_str(s: String) -> Result<Self, RhttpError> {
+        if let Ok(std_header) = HeaderType::try_into_std(&s) {
             Ok(std_header)
         } else {
             // TODO: add validation of Custom header 
@@ -133,11 +134,11 @@ impl <'r> HeaderType<'r> {
             if let result = Ok(Self::Custom(s)) {
                 return result;
             }
-            Err(RhttpErr::ParsingHttpHeaderErr)
+            Err(RhttpError::ParsingHttpHeaderErr)
         }
     }
 
-    fn try_into_std(s: &str) -> Result<Self, RhttpErr> {
+    fn try_into_std(s: &str) -> Result<Self, RhttpError> {
         match s {
             "Accept" => Ok(Self::Accept),
             "Connection" => Ok(Self::Connection),
@@ -147,7 +148,7 @@ impl <'r> HeaderType<'r> {
             "User-Agent" => Ok(Self::UserAgent),
             "Host" => Ok(Self::Host),
             "Date" => Ok(Self::Date),
-            _ => Err(RhttpErr::ParsingHttpHeaderErr),
+            _ => Err(RhttpError::ParsingHttpHeaderErr),
         }
     }
 }
@@ -156,8 +157,8 @@ impl <'r> HeaderType<'r> {
 pub struct HeaderValue(Box<str>);
 
 impl HeaderValue {
-    pub fn to_str(&self) -> Result<&str, RhttpErr> {
-        Ok(self.as_ref())
+    pub fn to_str(&self) -> &str {
+        self.as_ref()
     }
 }
 
@@ -168,7 +169,7 @@ impl std::fmt::Debug for HeaderValue {
 }
 
 impl FromStr for HeaderValue {
-    type Err = RhttpErr;
+    type Err = RhttpError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self(Box::from(s)))
@@ -176,7 +177,7 @@ impl FromStr for HeaderValue {
 }
 
 impl TryFrom<usize> for HeaderValue {
-    type Error = RhttpErr;
+    type Error = RhttpError;
 
     fn try_from(value: usize) -> Result<Self, Self::Error> {
         Ok(Self(Box::from(format!("{}", value))))
@@ -184,7 +185,7 @@ impl TryFrom<usize> for HeaderValue {
 }
 
 impl TryFrom<&str> for HeaderValue {
-    type Error = RhttpErr;
+    type Error = RhttpError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         value.parse()
@@ -192,7 +193,7 @@ impl TryFrom<&str> for HeaderValue {
 }
 
 impl TryFrom<String> for HeaderValue {
-    type Error = RhttpErr;
+    type Error = RhttpError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         value.parse()

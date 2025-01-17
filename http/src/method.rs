@@ -1,5 +1,6 @@
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Default)]
 pub enum Method {
+    #[default]
     Get,
     Put,
     Post,
@@ -8,8 +9,7 @@ pub enum Method {
     Head,
     Trace,
     Connect,
-    Patch,
-    #[default] None
+    Patch
 }
 
 impl Method {
@@ -24,6 +24,21 @@ impl Method {
             "TRACE" => Self::Trace,
             "CONNECT" => Self::Connect,
             "PATCH" => Self::Patch,
+            _ => unreachable!("Any other http request method does not exists")
+        }
+    }
+
+    pub fn to_str(&self) -> &'static str {
+        match self {
+            Self::Get => "GET",
+            Self::Post => "POST",
+            Self::Put => "PUT",
+            Self::Delete => "DELETE",
+            Self::Options => "OPTIONS",
+            Self::Head => "HEAD",
+            Self::Trace => "TRACE",
+            Self::Connect => "CONNECT",
+            Self::Patch => "PATCH",
             _ => unreachable!("Any other http request method does not exists")
         }
     }

@@ -2,4 +2,5 @@
 /core/target
 /http/target
 /.idea
-
+/.vscode
+/.git

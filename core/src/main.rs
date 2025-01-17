@@ -47,5 +47,5 @@ async fn main() {
     app.register_path(Method::Get, "/empty", handle_post_empty_reply);
     app.register_path(Method::Post, "/", handle_post_base);
 
-    app.listen().await;
+    app.listen().await.unwrap();
 }

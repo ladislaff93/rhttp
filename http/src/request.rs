@@ -2,16 +2,16 @@ use std::collections::HashMap;
 use crate::{headers::{HeaderType, HeaderValue}, method::Method, version::ProtocolVersion};
 
 #[derive(Debug, Default, Clone)]
-pub struct Request<'r> {
-    pub request_line : RequestLine<'r>,
-    pub headers: HashMap<HeaderType<'r>, HeaderValue>,
-    pub body: &'r str
+pub struct Request {
+    pub request_line : RequestLine,
+    pub headers: HashMap<HeaderType, HeaderValue>,
+    pub body: String
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct RequestLine<'r> {
+pub struct RequestLine {
     pub method: Method,
-    pub path: &'r str,
+    pub path: String,
     pub protocol_version: ProtocolVersion,
 }
 
@@ -35,7 +35,7 @@ pub struct RequestLine<'r> {
 //     }
 // }
 
-impl <'r> Request<'r> {
+impl Request {
     pub fn new() -> Self {
         Self::default()
     }
@@ -44,7 +44,7 @@ impl <'r> Request<'r> {
         self.request_line.method = method;
     }
 
-    pub fn add_path(&mut self, path: &'r str) {
+    pub fn add_path(&mut self, path: String) {
         self.request_line.path = path;
     }
 
@@ -52,13 +52,13 @@ impl <'r> Request<'r> {
         self.request_line.protocol_version = protocol_version;
     }
 
-    pub fn add_header(&mut self, key: &'r str, val: &'r str) {
+    pub fn add_header(&mut self, key: String, val: String) {
         let header_type = HeaderType::from_str(key).expect("valid header type item");
         let header_value = val.parse::<HeaderValue>().unwrap();
         self.headers.entry(header_type).or_insert(header_value);
     }
 
-    pub fn add_body(&mut self, body: &'r str) {
+    pub fn add_body(&mut self, body: String) {
         self.body = body;
     }
 
