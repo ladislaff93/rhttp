@@ -9,15 +9,16 @@ enum RadixNodeType {
 
 impl Ord for RadixNodeType {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        type Type = RadixNodeType;
         let self_priority = match self {
-            RadixNodeType::Exact => 3,
-            RadixNodeType::PathArgument => 2,
-            RadixNodeType::WildCard => 1,
+            Type::Exact => 3,
+            Type::PathArgument => 2,
+            Type::WildCard => 1,
         };
         let other_priority = match other {
-            RadixNodeType::Exact => 3,
-            RadixNodeType::PathArgument => 2,
-            RadixNodeType::WildCard => 1,
+            Type::Exact => 3,
+            Type::PathArgument => 2,
+            Type::WildCard => 1,
         };
         self_priority.cmp(&other_priority)
     }
@@ -29,6 +30,48 @@ impl PartialOrd for RadixNodeType {
     }
 }
 
+pub struct RadixTree {
+    root_node: RadixNode,
+}
+
+impl Default for RadixTree {
+    fn default() -> Self {
+        Self {
+            root_node: RadixNode {
+                prefix: String::new(),
+                node_type: RadixNodeType::Exact,
+                endpoint_id: None,
+                children: Vec::new(),
+            },
+        }
+    }
+}
+
+impl RadixTree {
+    pub fn new() -> Self {
+        Self {
+            root_node: RadixNode {
+                prefix: String::new(),
+                node_type: RadixNodeType::Exact,
+                endpoint_id: None,
+                children: Vec::new(),
+            },
+        }
+    }
+
+    pub fn insert(&mut self, path: &str, endpoint_id: String) {
+        self.root_node.insert(path, endpoint_id);
+    }
+
+    pub fn find(&self, path: &str) -> Option<(String, HashMap<String, String>)> {
+        if let Some(match_result) = self.root_node.find(path) {
+            Some((match_result.endpoint_id, match_result.parameters))
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 struct RadixNode {
     prefix: String,
@@ -37,11 +80,58 @@ struct RadixNode {
     children: Vec<RadixNode>,
 }
 
-pub struct RadixTree {
-    root_node: RadixNode,
+struct RadixNodeBuilder {
+    prefix: String,
+    node_type: RadixNodeType,
+    endpoint_id: Option<String>,
+    children: Vec<RadixNode>,
 }
 
-// TODO: make builder pattern for building RadixNode
+impl RadixNodeBuilder {
+    pub fn new() -> Self {
+        Self {
+            prefix: String::new(),
+            node_type: RadixNodeType::Exact,
+            endpoint_id: None,
+            children: Vec::new(),
+        }
+    }
+
+    pub fn prefix(mut self, prefix: String) -> Self {
+        self.prefix = prefix;
+        self
+    }
+
+    pub fn node_type(mut self, node_type: RadixNodeType) -> Self {
+        self.node_type = node_type;
+        self
+    }
+
+    pub fn endpoint_id(mut self, endpoint_id: Option<String>) -> Self {
+        self.endpoint_id = endpoint_id;
+        self
+    }
+
+    pub fn child(mut self, child: RadixNode) -> Self {
+        self.children.push(child);
+        self
+    }
+
+    pub fn children(mut self, children: Vec<RadixNode>) -> Self {
+        self.children = children;
+        self
+    }
+
+    pub fn build(self) -> RadixNode {
+        RadixNode {
+            prefix: self.prefix,
+            node_type: self.node_type,
+            endpoint_id: self.endpoint_id,
+            children: self.children,
+        }
+    }
+}
+
 impl RadixNode {
     // temporary solution to use endpoint_id as Optional arg
     pub fn new(prefix: String, node_type: RadixNodeType, endpoint_id: Option<String>) -> Self {
@@ -60,7 +150,7 @@ impl RadixNode {
             .count()
     }
 
-    pub fn insert(&mut self, path: &str, endpoint_id: String) {
+    fn insert(&mut self, path: &str, endpoint_id: String) {
         let mut segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
 
         if segments.is_empty() {
@@ -80,18 +170,32 @@ impl RadixNode {
         for i in 0..self.children.len() {
             let common_prefix = Self::common_prefix_length(&self.children[i].prefix, segment);
             if common_prefix > 0 {
+                // this would happend only if the node is dynamic already, e.g. starts with *abc
+                // new would be *ability. i dont like the idea using common prefix on dynamic
+                // nodes
+                let builder = RadixNodeBuilder::new();
+                if let Some(path) = segment.to_string().strip_prefix('*') {
+                    self.children.push(
+                        builder
+                            .prefix(path.to_string())
+                            .node_type(RadixNodeType::WildCard)
+                            .build(),
+                    );
+                    self.children[i].insert(&segments.join("/"), endpoint_id);
+                    return;
                 // this would happend only if the node is dynamic already, e.g. starts with :abc
                 // new would be :ability. i dont like the idea using common prefix on dynamic
                 // nodes
-                if let Some(path) = segment.to_string().strip_prefix(':') {
-                    self.children.push(RadixNode::new(
-                        path.to_string(),
-                        RadixNodeType::PathArgument,
-                        None,
-                    ));
+                } else if let Some(path) = segment.to_string().strip_prefix(':') {
+                    self.children.push(
+                        builder
+                            .prefix(path.to_string())
+                            .node_type(RadixNodeType::PathArgument)
+                            .build(),
+                    );
                     self.children[i].insert(&segments.join("/"), endpoint_id);
                     return;
-                };
+                }
 
                 let child = &mut self.children[i];
 
@@ -113,8 +217,10 @@ impl RadixNode {
                         child.children[existing_child_idx]
                             .insert(&segments.join("/"), endpoint_id.clone());
                     } else {
-                        let mut new_child_node =
-                            RadixNode::new(new_node_suffix, RadixNodeType::Exact, None);
+                        let mut new_child_node = builder
+                            .prefix(new_node_suffix)
+                            .node_type(RadixNodeType::Exact)
+                            .build();
                         new_child_node.insert(&segments.join("/"), endpoint_id.clone());
                         child.children.push(new_child_node);
                     }
@@ -130,19 +236,21 @@ impl RadixNode {
                     // we adding new "us" segment to existing "user" node so we split at "us" and "" will
                     // be the new_node_suffix remainder which we need to check for and handle
                     if !new_node_suffix.is_empty() {
-                        let mut new_child_node =
-                            RadixNode::new(new_node_suffix, RadixNodeType::Exact, None);
+                        let mut new_child_node = RadixNodeBuilder::new()
+                            .prefix(new_node_suffix)
+                            .node_type(RadixNodeType::Exact)
+                            .build();
                         // create the new parent with common prefix
                         // and we need to inherit the node_type
                         // let mut new_parent_node =
                         // RadixNode::new(old_node_prefix, child.node_type, None);
                         // create new child with remainder of the previous node
                         // and we need to inherit the node_type
-                        let mut suffix_node = RadixNode::new(
-                            old_node_suffix,
-                            child.node_type,
-                            child.endpoint_id.clone(),
-                        );
+                        let mut suffix_node = RadixNodeBuilder::new()
+                            .prefix(old_node_suffix)
+                            .node_type(child.node_type)
+                            .endpoint_id(child.endpoint_id.clone())
+                            .build();
 
                         new_child_node.insert(&segments.join("/"), endpoint_id);
 
@@ -151,7 +259,10 @@ impl RadixNode {
                         // new_parent_node.children = child.children;
                         let old_child = std::mem::replace(
                             child,
-                            RadixNode::new(old_node_prefix, child.node_type, None),
+                            RadixNodeBuilder::new()
+                                .prefix(old_node_prefix)
+                                .node_type(child.node_type)
+                                .build(),
                         );
                         suffix_node.children = old_child.children;
                         child.children.push(new_child_node);
@@ -159,12 +270,18 @@ impl RadixNode {
 
                         return;
                     }
-                    let mut suffix_node =
-                        RadixNode::new(old_node_suffix, child.node_type, child.endpoint_id.clone());
+                    let mut suffix_node = RadixNodeBuilder::new()
+                        .prefix(old_node_suffix)
+                        .node_type(child.node_type)
+                        .endpoint_id(child.endpoint_id.clone())
+                        .build();
 
                     let old_child = std::mem::replace(
                         child,
-                        RadixNode::new(old_node_prefix, child.node_type, None),
+                        RadixNodeBuilder::new()
+                            .prefix(old_node_prefix)
+                            .node_type(child.node_type)
+                            .build(),
                     );
 
                     suffix_node.children = old_child.children;
@@ -177,11 +294,24 @@ impl RadixNode {
         }
 
         // completely new node
-        let mut new_node = if let Some(path) = segment.to_string().strip_prefix(':') {
-            RadixNode::new(path.to_string(), RadixNodeType::PathArgument, None)
+        let builder = RadixNodeBuilder::new();
+        let mut new_node = if let Some(path) = segment.to_string().strip_prefix('*') {
+            builder
+                .prefix(path.to_string())
+                .node_type(RadixNodeType::WildCard)
+                .build()
+        } else if let Some(path) = segment.to_string().strip_prefix(':') {
+            builder
+                .prefix(path.to_string())
+                .node_type(RadixNodeType::PathArgument)
+                .build()
         } else {
-            RadixNode::new(segment.to_string(), RadixNodeType::Exact, None)
+            builder
+                .prefix(segment.to_string())
+                .node_type(RadixNodeType::Exact)
+                .build()
         };
+
         new_node.insert(&segments.join("/"), endpoint_id);
         self.children.push(new_node);
     }
@@ -232,7 +362,7 @@ impl RadixNode {
         }) = queue.pop_front()
         {
             if remaining_path.is_empty()
-                && self.endpoint_id.is_some()
+                && curr_node.endpoint_id.is_some()
                 && (curr_match.is_none()
                     || priority > curr_match.as_ref().expect("Search State").priority)
             {
@@ -285,11 +415,22 @@ impl RadixNode {
                                 curr_node: child,
                                 remaining_path: remaining_path[1..].to_vec(),
                                 parameters: new_params,
+                                // idk if this is correct to do let me think about it
                                 priority: std::cmp::min(priority, MatchPriority::Parameter),
                             });
                         }
                         // third try match wildCard
-                        RadixNodeType::WildCard => unimplemented!("Will be implemented"),
+                        RadixNodeType::WildCard => {
+                            let mut new_params = parameters.clone();
+                            new_params
+                                .insert(child.prefix[1..].to_owned(), remaining_path.join("/"));
+                            queue.push_back(SearchState {
+                                curr_node: child,
+                                remaining_path: vec![],
+                                parameters: new_params,
+                                priority: MatchPriority::WildCard,
+                            });
+                        }
                     }
                 }
             }
@@ -318,31 +459,6 @@ enum MatchPriority {
     WildCard = 1,
 }
 
-impl RadixTree {
-    pub fn new() -> RadixTree {
-        RadixTree {
-            root_node: RadixNode {
-                prefix: String::new(),
-                node_type: RadixNodeType::Exact,
-                endpoint_id: None,
-                children: Vec::new(),
-            },
-        }
-    }
-
-    pub fn insert(&mut self, path: &str, endpoint_id: String) {
-        self.root_node.insert(path, endpoint_id);
-    }
-
-    pub fn find(&self, path: &str) -> Option<(String, HashMap<String, String>)> {
-        if let Some(match_result) = self.root_node.find(path) {
-            Some((match_result.endpoint_id, match_result.parameters))
-        } else {
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::from_request::PathParam;
@@ -357,16 +473,24 @@ mod tests {
         }
         let mut new_tree = RadixTree::new();
         new_tree.insert("/user/:user_id", 0.to_string());
-        new_tree.insert("useless/:useless_id", 1.to_string());
+        new_tree.insert("/useless/:useless_id", 1.to_string());
         new_tree.insert("/", 2.to_string());
         new_tree.insert("/user", 2.to_string());
         new_tree.insert("/use", 3.to_string());
         new_tree.insert("/us", 4.to_string());
+        new_tree.insert("/dead/*end", 10.to_string());
         assert_eq!(0.to_string(), new_tree.find("user/9").expect("is there").0);
-        assert_eq!(1.to_string(), new_tree.find("useless/9").expect("is there").0);
+        assert_eq!(
+            1.to_string(),
+            new_tree.find("/useless/9").expect("is there").0
+        );
         assert_eq!(2.to_string(), new_tree.find("/").expect("is there").0);
         assert_eq!(2.to_string(), new_tree.find("/user").expect("is there").0);
         assert_eq!(3.to_string(), new_tree.find("/use").expect("is there").0);
         assert_eq!(4.to_string(), new_tree.find("/us").expect("is there").0);
+        assert_eq!(
+            10.to_string(),
+            new_tree.find("/dead/all/over").expect("is there").0
+        );
     }
 }
