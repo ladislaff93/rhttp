@@ -1,8 +1,10 @@
 use crate::{
     endpoint::{BoxedHandler, Endpoint},
     handler::{self, Handler},
-    incoming::Incoming, radix_tree::RadixTree,
+    incoming::Incoming,
+    radix_tree::RadixTree,
 };
+
 use async_std::{
     io::{BufReader, Read, Write},
     net::TcpListener,
@@ -20,11 +22,13 @@ use http::{
     status_code::Status,
 };
 use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 
 pub struct Router {
+    hasher: DefaultHasher,
     routes: HashMap<Method, RadixTree>,
-    handlers: HashMap<String, Arc<Endpoint>>,
+    handlers: HashMap<u64, Arc<Endpoint>>,
     listener: Option<TcpListener>,
 }
 
@@ -34,6 +38,12 @@ impl Default for Router {
     }
 }
 
+#[derive(Hash)]
+struct EndpointId {
+    method: Method,
+    path: *const str,
+}
+
 impl Router {
     pub fn new() -> Self {
         let mut routes = HashMap::new();
@@ -41,6 +51,7 @@ impl Router {
             routes.insert(*method, RadixTree::new());
         }
         Self {
+            hasher: DefaultHasher::new(),
             routes,
             handlers: HashMap::new(),
             listener: None,
@@ -52,13 +63,14 @@ impl Router {
         H: Handler<T> + Send + Sync + 'static,
         T: Send + Sync + 'static,
     {
-        let handler_signature = format!("{}{}",method.to_str(), path);
         let new_endpoint = Arc::new(Endpoint::new(handler));
-        self.handlers.insert(handler_signature.clone(), new_endpoint);
+        EndpointId { method, path }.hash(&mut self.hasher);
+        let endpoint_id = self.hasher.finish();
+        self.handlers.insert(endpoint_id, new_endpoint);
         self.routes
             .get_mut(&method)
             .expect("Method are already pre-populated!")
-            .insert(path, handler_signature);
+            .insert(path, endpoint_id);
     }
 
     pub async fn bind_address(&mut self, address: &str) -> Result<(), RhttpError> {
@@ -117,7 +129,7 @@ impl Router {
             .expect("Map of Methods!");
 
         // let handler_signature = tree.find(incoming.get_request_path()).unwrap();
-        let handler = self.handlers.get("").expect("");
+        let handler = self.handlers.get(&0_u64).expect("");
 
         return Ok(&handler.handler);
 
