@@ -163,19 +163,29 @@ impl RadixNode {
                 // new would be *ability or :ability
                 // i dont like the idea using common prefix on dynamic nodes
                 if segment.starts_with("*") || segment.starts_with(":") {
-                    let mut builder = RadixNodeBuilder::new();
-                    if let Some(path) = segment.strip_prefix('*') {
-                        builder = builder
-                            .constant(path.to_string())
-                            .node_type(RadixNodeType::WildCard);
-                    } else if let Some(path) = segment.strip_prefix(':') {
-                        builder = builder
-                            .constant(path.to_string())
-                            .node_type(RadixNodeType::PathArgument);
+                    // checking if the node does exist already
+                    if let Some(existing_child_idx) = self
+                        .children
+                        .iter()
+                        .position(|child| child.constant == segment)
+                    {
+                        self.children[existing_child_idx].insert(segments, endpoint_id);
+                    } else {
+                        // if let Some(path) = segment.strip_prefix('*') {
+                        //     builder = builder
+                        //         .constant(path.to_string())
+                        //         .node_type(RadixNodeType::WildCard);
+                        // } else if let Some(path) = segment.strip_prefix(':') {
+                        // builder = builder
+                        let radix_node = RadixNodeBuilder::new()
+                            .constant(segment.to_string())
+                            .node_type(RadixNodeType::PathArgument)
+                            .build();
+                        // }
+                        self.children.push(radix_node);
+                        self.children[i].insert(segments, endpoint_id);
+                        return;
                     }
-                    self.children.push(builder.build());
-                    self.children[i].insert(segments, endpoint_id);
-                    return;
                 }
 
                 let child = &mut self.children[i];
@@ -258,14 +268,14 @@ impl RadixNode {
 
         // completely new node
         let builder = RadixNodeBuilder::new();
-        let mut new_node = if let Some(path) = segment.to_string().strip_prefix('*') {
+        let mut new_node = if segment.starts_with('*') {
             builder
-                .constant(path.to_string())
+                .constant(segment.to_string())
                 .node_type(RadixNodeType::WildCard)
                 .build()
-        } else if let Some(path) = segment.to_string().strip_prefix(':') {
+        } else if segment.starts_with(':') {
             builder
-                .constant(path.to_string())
+                .constant(segment.to_string())
                 .node_type(RadixNodeType::PathArgument)
                 .build()
         } else {

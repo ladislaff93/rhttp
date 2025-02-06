@@ -33,16 +33,15 @@ async fn handle_get_path_params_with_two(PathParam(order_id): PathParam<usize>, 
     format!("order_id: {order_id}, activity_id: {activity_id}")
 }
 
-
 #[async_std::main]
 async fn main() {
     let mut app = Router::new();
-    app.bind_address("127.0.0.1:8080").await;
+    app.bind_address("127.0.0.1:8080").await.unwrap();
 
     // register handlers
     app.register_path(Method::Get, "/", handle_get_base);
-    app.register_path(Method::Get, "/order/{order_id}", handle_get_path_params);
-    app.register_path(Method::Get, "/order/{order_id}/activity/{activity_id}", handle_get_path_params_with_two);
+    app.register_path(Method::Get, "/order/:order_id", handle_get_path_params);
+    app.register_path(Method::Get, "/order/:order_id/activity/:activity_id", handle_get_path_params_with_two);
     app.register_path(Method::Get, "/path", handle_get_query_params);
     app.register_path(Method::Get, "/empty", handle_post_empty_reply);
     app.register_path(Method::Post, "/", handle_post_base);

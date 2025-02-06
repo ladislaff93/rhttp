@@ -41,7 +41,7 @@ impl Default for Router {
 #[derive(Hash)]
 struct EndpointId {
     method: Method,
-    path: *const str,
+    path: &'static str,
 }
 
 impl Router {
@@ -58,14 +58,18 @@ impl Router {
         }
     }
 
+    fn hash_endpoint(&mut self, method: Method, path: &'static str) -> u64 {
+        EndpointId { method, path }.hash(&mut self.hasher);
+        self.hasher.finish()
+    }
+
     pub fn register_path<H, T>(&mut self, method: Method, path: &'static str, handler: H)
     where
         H: Handler<T> + Send + Sync + 'static,
         T: Send + Sync + 'static,
     {
         let new_endpoint = Arc::new(Endpoint::new(handler));
-        EndpointId { method, path }.hash(&mut self.hasher);
-        let endpoint_id = self.hasher.finish();
+        let endpoint_id = self.hash_endpoint(method, path);
         self.handlers.insert(endpoint_id, new_endpoint);
         self.routes
             .get_mut(&method)
@@ -128,16 +132,15 @@ impl Router {
             .get(incoming.get_request_method())
             .expect("Map of Methods!");
 
-        // let handler_signature = tree.find(incoming.get_request_path()).unwrap();
-        let handler = self.handlers.get(&0_u64).expect("");
+        let (endpoint_id, params) = tree.find(incoming.get_request_path()).expect("nah...");
+        let handler = self.handlers.get(&endpoint_id).expect("");
 
-        return Ok(&handler.handler);
-
-        Err(HandlerNotFound(format!(
-            "No handler found for path {} and method {:?}",
-            incoming.get_request_path(),
-            incoming.get_request_method()
-        )))
+        Ok(&handler.handler)
+        // Err(HandlerNotFound(format!(
+        //     "No handler found for path {} and method {:?}",
+        //     incoming.get_request_path(),
+        //     incoming.get_request_method()
+        // )))
     }
 
     // fn match_dynamic_path(&self, incoming: &mut Incoming, endpoint: Arc<Endpoint>) -> bool {
