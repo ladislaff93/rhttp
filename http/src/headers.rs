@@ -124,8 +124,8 @@ impl std::fmt::Display for HeaderType {
     }
 }
 
-impl <'r> HeaderType {
-    pub fn from_str(s: String) -> Result<Self, RhttpError> {
+impl HeaderType {
+    pub fn from_string(s: String) -> Result<Self, RhttpError> {
         if let Ok(std_header) = HeaderType::try_into_std(&s) {
             Ok(std_header)
         } else {

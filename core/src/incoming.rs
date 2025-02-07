@@ -48,7 +48,7 @@ impl Incoming {
     fn parse_request_line(&mut self, request_line: String) -> Result<(), RhttpError> {
         let mut parts = request_line.split_whitespace();
 
-        let method = Method::from_str(parts.next().ok_or(ParsingHttpMethodErr)?);
+        let method = Method::parse_from_str(parts.next().ok_or(ParsingHttpMethodErr)?);
         self.request.add_method(method);
 
         let path = parts.next().ok_or(ParsingPathErr)?;
@@ -61,7 +61,7 @@ impl Incoming {
         }
 
         let protocol_version =
-            ProtocolVersion::from_str(parts.next().ok_or(ParsingHttpProtocolErr)?);
+            ProtocolVersion::parse_from_str(parts.next().ok_or(ParsingHttpProtocolErr)?);
         self.request.add_protocol_version(protocol_version);
 
         Ok(())

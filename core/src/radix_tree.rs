@@ -340,11 +340,7 @@ impl RadixNode {
                     || priority > curr_match.as_ref().expect("Search State").priority)
             {
                 curr_match = Some(MatchResult {
-                    endpoint_id: curr_node
-                        .endpoint_id
-                        .as_ref()
-                        .expect("Search State")
-                        .clone(),
+                    endpoint_id: curr_node.endpoint_id.expect("Search State"),
                     parameters,
                     priority,
                 })

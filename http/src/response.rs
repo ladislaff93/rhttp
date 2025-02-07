@@ -22,7 +22,7 @@ pub struct StatusLine<'rs> {
     pub reason_phrase: &'rs str,
 }
 
-impl<'rs> Default for StatusLine<'rs> {
+impl Default for StatusLine<'_> {
     fn default() -> Self {
         Self {
             version: ProtocolVersion::default(),
@@ -32,7 +32,7 @@ impl<'rs> Default for StatusLine<'rs> {
     }
 }
 
-impl<'rs> Default for Response<'rs> {
+impl Default for Response<'_> {
     fn default() -> Self {
         let mut zelf = Self {
             status_line: StatusLine::default(),
@@ -53,7 +53,7 @@ pub trait IntoResponse {
 
 pub struct Html(pub String);
 
-impl<'rs> Response<'rs> {
+impl Response<'_> {
     fn add_header<T>(&mut self, key: HeaderType, val: T)
     where
         T: TryInto<HeaderValue, Error = RhttpError>,

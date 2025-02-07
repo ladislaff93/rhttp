@@ -53,7 +53,7 @@ impl Request {
     }
 
     pub fn add_header(&mut self, key: String, val: String) {
-        let header_type = HeaderType::from_str(key).expect("valid header type item");
+        let header_type = HeaderType::from_string(key).expect("valid header type item");
         let header_value = val.parse::<HeaderValue>().unwrap();
         self.headers.entry(header_type).or_insert(header_value);
     }

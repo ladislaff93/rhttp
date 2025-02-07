@@ -8,7 +8,7 @@ pub enum ProtocolVersion {
 }
 
 impl ProtocolVersion {
-    pub fn from_str(protocol: &str) -> Self {
+    pub fn parse_from_str(protocol: &str) -> Self {
         match protocol.to_uppercase().as_str() {
             "HTTP/1.0" => Self::Http10,
             "HTTP/1.1" => Self::Http11,

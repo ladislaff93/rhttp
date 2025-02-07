@@ -1,8 +1,8 @@
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::panic)]
+#![deny(clippy::cognitive_complexity)]
 
 use http::method::Method;
-//#![deny(clippy::cognitive_complexity)]
 pub mod router;
 pub mod handler;
 pub mod from_request;
@@ -42,10 +42,7 @@ mod tests {
 
 /* 
 TODO:
-    - Implements MVP generic handlers that will take 0 to n arguments and return impl IntoResponse trait | DONE
     - proper error handling
-    - remove dync_path flag from enpoint and implement proper matching 
-    - implements response
     - implement url parsing
     - implements other part of the http protocol
     - headers processing impl:

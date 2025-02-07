@@ -13,7 +13,7 @@ pub enum Method {
 }
 
 impl Method {
-    pub fn from_str(method: &str) -> Self {
+    pub fn parse_from_str(method: &str) -> Self {
         match method.to_uppercase().as_str() {
             "GET" => Self::Get,
             "POST" => Self::Post,
@@ -39,7 +39,6 @@ impl Method {
             Self::Trace => "TRACE",
             Self::Connect => "CONNECT",
             Self::Patch => "PATCH",
-            _ => unreachable!("Any other http request method does not exists")
         }
     }
 
