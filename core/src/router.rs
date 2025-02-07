@@ -1,8 +1,9 @@
 use crate::{
     endpoint::{BoxedHandler, Endpoint},
-    handler::{self, Handler},
+    handler::Handler,
     incoming::Incoming,
     radix_tree::RadixTree,
+    EndpointId,
 };
 
 use async_std::{
@@ -36,12 +37,6 @@ impl Default for Router {
     fn default() -> Self {
         Router::new()
     }
-}
-
-#[derive(Hash)]
-struct EndpointId {
-    method: Method,
-    path: &'static str,
 }
 
 impl Router {
@@ -127,66 +122,21 @@ impl Router {
     }
 
     pub fn get_handler(&self, incoming: &mut Incoming) -> Result<&BoxedHandler, RhttpError> {
-        let tree = self
-            .routes
-            .get(incoming.get_request_method())
-            .expect("Map of Methods!");
+        let method = incoming.get_request_method();
+        let path = incoming.get_request_path();
+        let tree = self.routes.get(method).expect("Map of Methods!");
 
-        let (endpoint_id, params) = tree.find(incoming.get_request_path()).expect("nah...");
-        let handler = self.handlers.get(&endpoint_id).expect("");
-
-        Ok(&handler.handler)
-        // Err(HandlerNotFound(format!(
-        //     "No handler found for path {} and method {:?}",
-        //     incoming.get_request_path(),
-        //     incoming.get_request_method()
-        // )))
+        let (endpoint_id, params) = tree.find(path).ok_or(HandlerNotFound(format!(
+            "No handler found for path {} and method {}",
+            path,
+            method.to_str()
+        )))?;
+        incoming.set_path_params(params);
+        Ok(self
+            .handlers
+            .get(&endpoint_id)
+            .expect("For provided endpoint id should be registered handler"))
     }
-
-    // fn match_dynamic_path(&self, incoming: &mut Incoming, endpoint: Arc<Endpoint>) -> bool {
-    //     let register_path_splitted = endpoint
-    //         .path
-    //         .split("/")
-    //         .filter(|s| !s.is_empty())
-    //         .collect::<Vec<&str>>();
-    //     let incoming_path_splitted = incoming
-    //         .request
-    //         .request_line
-    //         .path
-    //         .split("/")
-    //         .filter(|s| !s.is_empty())
-    //         .collect::<Vec<&str>>();
-    //
-    //     let mut path_params: Vec<String> = register_path_splitted
-    //         .iter()
-    //         .enumerate()
-    //         .filter_map(|(idx, &sub)| {
-    //             if sub.starts_with("{") && sub.ends_with("}") {
-    //                 Some(incoming_path_splitted.get(idx).unwrap().to_string())
-    //             } else {
-    //                 None
-    //             }
-    //         })
-    //         .collect();
-    //
-    //     if path_params.is_empty() {
-    //         return false;
-    //     }
-    //
-    //     incoming.set_path_params(path_params.clone());
-    //
-    //     register_path_splitted
-    //         .iter()
-    //         .map(|&sub| {
-    //             if sub.starts_with("{") && sub.ends_with("}") {
-    //                 "/".to_owned() + &path_params.remove(0)
-    //             } else {
-    //                 "/".to_owned() + sub
-    //             }
-    //         })
-    //         .collect::<String>()
-    //         == incoming.request.request_line.path
-    // }
 }
 
 #[cfg(test)]
@@ -197,8 +147,7 @@ mod tests {
     use super::*;
     //
     fn setup_router() -> Router {
-        let new_router = Router::new();
-        return new_router;
+        Router::new()
     }
 
     #[async_std::test]

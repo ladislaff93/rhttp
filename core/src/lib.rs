@@ -1,5 +1,7 @@
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::panic)]
+
+use http::method::Method;
 //#![deny(clippy::cognitive_complexity)]
 pub mod router;
 pub mod handler;
@@ -8,6 +10,12 @@ pub mod endpoint;
 pub mod incoming;
 pub mod radix_tree;
 
+
+#[derive(Hash)]
+pub(crate) struct EndpointId {
+    method: Method,
+    path: &'static str,
+}
 
 #[cfg(test)]
 mod tests {

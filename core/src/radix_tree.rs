@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 enum RadixNodeType {
@@ -58,7 +58,7 @@ impl RadixTree {
         self.0.insert(&mut path_segments, endpoint_id);
     }
 
-    pub fn find(&self, path: &str) -> Option<(u64, HashMap<String, String>)> {
+    pub fn find(&self, path: &str) -> Option<(u64, Vec<String>)> {
         if let Some(match_result) = self.0.find(path) {
             Some((match_result.endpoint_id, match_result.parameters))
         } else {
@@ -321,7 +321,7 @@ impl RadixNode {
         queue.push_back(SearchState {
             curr_node: self,
             remaining_path: path.split('/').filter(|s| !s.is_empty()).collect(),
-            parameters: HashMap::new(),
+            parameters: vec![],
             priority: MatchPriority::Exact,
         });
 
@@ -383,7 +383,7 @@ impl RadixNode {
                         // second try match parameter
                         RadixNodeType::PathArgument => {
                             let mut new_params = parameters.clone();
-                            new_params.insert(child.constant.clone(), remaining_path[0].to_owned());
+                            new_params.push(remaining_path[0].to_owned());
                             queue.push_back(SearchState {
                                 curr_node: child,
                                 remaining_path: remaining_path[1..].to_vec(),
@@ -395,8 +395,7 @@ impl RadixNode {
                         // third try match wildCard
                         RadixNodeType::WildCard => {
                             let mut new_params = parameters.clone();
-                            new_params
-                                .insert(child.constant[1..].to_owned(), remaining_path.join("/"));
+                            new_params.push(remaining_path.join("/"));
                             queue.push_back(SearchState {
                                 curr_node: child,
                                 remaining_path: vec![],
@@ -415,13 +414,13 @@ impl RadixNode {
 struct SearchState<'a> {
     curr_node: &'a RadixNode,
     remaining_path: Vec<&'a str>,
-    parameters: HashMap<String, String>,
+    parameters: Vec<String>,
     priority: MatchPriority,
 }
 
 struct MatchResult {
     endpoint_id: u64,
-    parameters: HashMap<String, String>,
+    parameters: Vec<String>,
     priority: MatchPriority,
 }
 

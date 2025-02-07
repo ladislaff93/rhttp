@@ -7,9 +7,7 @@ use std::{
     pin::Pin,
 };
 
-pub(crate) struct Endpoint {
-    pub handler: BoxedHandler
-}
+pub(crate) struct Endpoint(BoxedHandler);
 
 impl Endpoint {
     pub fn new<H, T>(handler: H) -> Self
@@ -17,9 +15,21 @@ impl Endpoint {
         H: Handler<T> + Send + Sync + 'static,
         T: 'static + Send + Sync,
     {
-        Self {
-            handler: BoxedHandler::from_handler(handler)
-        }
+        Self(BoxedHandler::from_handler(handler))
+    }
+}
+
+impl Deref for Endpoint {
+    type Target = BoxedHandler;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Endpoint {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 

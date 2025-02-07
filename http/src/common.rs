@@ -43,6 +43,8 @@ pub enum RhttpError {
     ParsingQueryParamsErr(#[from] serde_qs::Error),
     #[error("error while parsing path params! {}", self)]
     ParsingPathParamsErr,
+    #[error("error while parsing widlcard params! {}", self)]
+    WildCardPathParamsErr,
     #[error("error while parsing request to string! {}", self)]
     ParsingRequestToStringErr(#[from] std::string::FromUtf8Error)
 }

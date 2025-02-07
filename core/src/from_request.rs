@@ -1,11 +1,11 @@
 use crate::incoming::Incoming;
+use http::common::RhttpError::{self, ParsingPathParamsErr};
 use serde::Deserialize;
 use std::{fmt::Debug, str::FromStr};
-use http::common::RhttpError::{self, ParsingPathParamsErr};
 
 pub(crate) trait FromRequest {
     fn extract(req: &Incoming) -> Result<Self, RhttpError>
-    where 
+    where
         Self: Sized + Send + Sync;
 }
 
@@ -72,7 +72,24 @@ where
     fn from_path(mut q: Vec<String>) -> Result<Self, RhttpError> {
         match T::from_str(&q.remove(0)) {
             Ok(a) => Ok(Self(a)),
-            Err(e) => {Err(ParsingPathParamsErr)},
+            Err(e) => Err(ParsingPathParamsErr),
+        }
+    }
+}
+
+pub struct WildCardParam<T>(pub T);
+
+impl<T> WildCardParam<T>
+where
+    T: FromStr,
+    T: Debug,
+    T: for<'a> Deserialize<'a>,
+    <T as FromStr>::Err: Debug,
+{
+    fn from_path(mut q: Vec<String>) -> Result<Self, RhttpError> {
+        match T::from_str(&q.remove(0)) {
+            Ok(a) => Ok(Self(a)),
+            Err(e) => Err(ParsingPathParamsErr),
         }
     }
 }
