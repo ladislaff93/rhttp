@@ -1,15 +1,14 @@
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::panic)]
-#![deny(clippy::cognitive_complexity)]
+#![deny(clippy::unwrap_used, clippy::panic, clippy::cognitive_complexity)]
+#![warn(clippy::pedantic, clippy::complexity)]
+#![allow(clippy::manual_async_fn, clippy::must_use_candidate, clippy::missing_panics_doc, clippy::missing_errors_doc, clippy::too_many_lines)]
 
 use http::method::Method;
-pub mod router;
-pub mod handler;
-pub mod from_request;
 pub mod endpoint;
+pub mod from_request;
+pub mod handler;
 pub mod incoming;
 pub mod radix_tree;
-
+pub mod router;
 
 #[derive(Hash)]
 pub(crate) struct EndpointId {
@@ -40,9 +39,10 @@ mod tests {
 // Received data: "Accept-Encoding: gzip, deflate, br, zstd"
 // Received data: "Accept-Language: sk-SK,sk;q=0.9,cs;q=0.8,en-US;q=0.7,en;q=0.6,ru;q=0.5"
 
-/* 
+/*
 TODO:
-    - proper error handling
+    - add async implementation
+    - macro for creating handlers
     - implement url parsing
     - implements other part of the http protocol
     - headers processing impl:
@@ -50,9 +50,4 @@ TODO:
         - header type
         - header value
         - conversions
-        - pretty printing headers map
-    -add async implementation
-    -add logging tracing
-    -db support
-    -macro for creating handlers   
 */

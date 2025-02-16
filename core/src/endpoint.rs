@@ -7,6 +7,11 @@ use std::{
     pin::Pin,
 };
 
+pub(crate) type BoxedHandler = Box<dyn ErasedIntoHandler + Send + Sync>;
+
+pub(crate) type PinnedBoxedResponse<'r> =
+    Pin<Box<dyn Future<Output = Result<Response<'r>, RhttpError>> + 'r + Send + Sync>>;
+
 pub(crate) struct Endpoint(BoxedHandler);
 
 impl Endpoint {
@@ -15,7 +20,7 @@ impl Endpoint {
         H: Handler<T> + Send + Sync + 'static,
         T: 'static + Send + Sync,
     {
-        Self(BoxedHandler::from_handler(handler))
+        Self(Box::new(HandlerWrapper::new(handler)))
     }
 }
 
@@ -33,26 +38,8 @@ impl DerefMut for Endpoint {
     }
 }
 
-pub struct BoxedHandler(Box<dyn ErasedIntoHandler + Send + Sync>);
-
-impl BoxedHandler {
-    pub fn from_handler<H, T>(handler: H) -> Self
-    where
-        H: Handler<T> + Send + Sync + 'static,
-        T: 'static + Send + Sync,
-    {
-        Self(Box::new(HandlerWrapper {
-            handler,
-            marker: PhantomData,
-        }))
-    }
-}
-
 pub trait ErasedIntoHandler {
-    fn call<'r>(
-        &'r self,
-        request: Incoming,
-    ) -> Pin<Box<dyn Future<Output = Result<Response<'r>, RhttpError>> + 'r + Send + Sync>>;
+    fn call(&self, request: Incoming) -> PinnedBoxedResponse;
 }
 
 pub struct HandlerWrapper<H, T>
@@ -64,28 +51,24 @@ where
     marker: std::marker::PhantomData<T>,
 }
 
+impl<H, T> HandlerWrapper<H, T>
+where
+    H: Handler<T> + Send + Sync,
+    T: 'static,
+{
+    fn new(handler: H) -> Self {
+        HandlerWrapper {
+            handler,
+            marker: PhantomData,
+        }
+    }
+}
+
 impl<H, T> ErasedIntoHandler for HandlerWrapper<H, T>
 where
     H: Handler<T> + Send + Sync,
 {
-    fn call<'r>(
-        &'r self,
-        request: Incoming,
-    ) -> Pin<Box<dyn Future<Output = Result<Response<'r>, RhttpError>> + 'r + Send + Sync>> {
+    fn call(&self, request: Incoming) -> PinnedBoxedResponse {
         Box::pin(self.handler.call(request))
-    }
-}
-
-impl Deref for BoxedHandler {
-    type Target = Box<dyn ErasedIntoHandler + Send + Sync>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for BoxedHandler {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }

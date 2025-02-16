@@ -1,5 +1,5 @@
 use crate::incoming::Incoming;
-use http::common::RhttpError::{self, ParsingPathParamsErr};
+use http::common::RhttpError::{self, ParsingPathParamsErr, WildCardPathParamsErr};
 use serde::Deserialize;
 use std::{fmt::Debug, str::FromStr};
 
@@ -49,6 +49,21 @@ where
     }
 }
 
+impl<T> FromRequest for WildCardParam<T>
+where
+    T: FromStr,
+    <T as FromStr>::Err: Debug,
+    T: Debug,
+    T: for<'a> Deserialize<'a>,
+{
+    fn extract(req: &Incoming) -> Result<Self, RhttpError>
+    where
+        Self: Sized + Send + Sync,
+    {
+        Self::from_path(&req.wildcard_param)
+    }
+}
+
 pub struct QueryParams<T>(pub T);
 
 impl<T> QueryParams<T>
@@ -72,7 +87,7 @@ where
     fn from_path(mut q: Vec<String>) -> Result<Self, RhttpError> {
         match T::from_str(&q.remove(0)) {
             Ok(a) => Ok(Self(a)),
-            Err(e) => Err(ParsingPathParamsErr),
+            Err(_e) => Err(ParsingPathParamsErr),
         }
     }
 }
@@ -86,10 +101,10 @@ where
     T: for<'a> Deserialize<'a>,
     <T as FromStr>::Err: Debug,
 {
-    fn from_path(mut q: Vec<String>) -> Result<Self, RhttpError> {
-        match T::from_str(&q.remove(0)) {
+    fn from_path(q: &str) -> Result<Self, RhttpError> {
+        match T::from_str(q) {
             Ok(a) => Ok(Self(a)),
-            Err(e) => Err(ParsingPathParamsErr),
+            Err(_e) => Err(WildCardPathParamsErr),
         }
     }
 }

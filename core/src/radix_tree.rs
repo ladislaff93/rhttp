@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 enum RadixNodeType {
@@ -58,9 +58,13 @@ impl RadixTree {
         self.0.insert(&mut path_segments, endpoint_id);
     }
 
-    pub fn find(&self, path: &str) -> Option<(u64, Vec<String>)> {
+    pub fn find(&self, path: &str) -> Option<(u64, Vec<String>, String)> {
         if let Some(match_result) = self.0.find(path) {
-            Some((match_result.endpoint_id, match_result.parameters))
+            Some((
+                match_result.endpoint_id,
+                match_result.path_params,
+                match_result.wildcard_param,
+            ))
         } else {
             None
         }
@@ -102,18 +106,8 @@ impl RadixNodeBuilder {
         self
     }
 
-    pub fn endpoint_id(mut self, endpoint_id: Option<u64>) -> Self {
-        self.endpoint_id = endpoint_id;
-        self
-    }
-
-    pub fn child(mut self, child: RadixNode) -> Self {
-        self.children.push(child);
-        self
-    }
-
-    pub fn children(mut self, children: Vec<RadixNode>) -> Self {
-        self.children = children;
+    pub fn endpoint_id(mut self, endpoint_id: u64) -> Self {
+        self.endpoint_id = Some(endpoint_id);
         self
     }
 
@@ -162,7 +156,7 @@ impl RadixNode {
                 // e.g. starts with *abc or :abc
                 // new would be *ability or :ability
                 // i dont like the idea using common prefix on dynamic nodes
-                if segment.starts_with("*") || segment.starts_with(":") {
+                if segment.starts_with('*') || segment.starts_with(':') {
                     // checking if the node does exist already
                     if let Some(existing_child_idx) = self
                         .children
@@ -171,17 +165,10 @@ impl RadixNode {
                     {
                         self.children[existing_child_idx].insert(segments, endpoint_id);
                     } else {
-                        // if let Some(path) = segment.strip_prefix('*') {
-                        //     builder = builder
-                        //         .constant(path.to_string())
-                        //         .node_type(RadixNodeType::WildCard);
-                        // } else if let Some(path) = segment.strip_prefix(':') {
-                        // builder = builder
                         let radix_node = RadixNodeBuilder::new()
                             .constant(segment.to_string())
                             .node_type(RadixNodeType::PathArgument)
                             .build();
-                        // }
                         self.children.push(radix_node);
                         self.children[i].insert(segments, endpoint_id);
                         return;
@@ -222,7 +209,7 @@ impl RadixNode {
                      * Child -> prefix node & suffix node
                      * Segment -> suffix node
                      *
-                     * lets call child node that we split GrandParent
+                     * lets call child node that we splitting GrandParent
                      * lets call splitted child's prefix Parent
                      * lets call splitted child's suffix OlderSibling
                      * lets call splitted segment's suffix YoungerSibling
@@ -239,12 +226,15 @@ impl RadixNode {
                         .node_type(child.node_type)
                         .build();
 
-                    let mut older_sibling_node = RadixNodeBuilder::new()
+                    let mut older_sibling_node_builder = RadixNodeBuilder::new()
                         .constant(older_sibling)
-                        .node_type(child.node_type)
-                        .endpoint_id(child.endpoint_id)
-                        .build();
-
+                        .node_type(child.node_type);
+                    older_sibling_node_builder = if let Some(id) = child.endpoint_id {
+                        older_sibling_node_builder.endpoint_id(id)
+                    } else {
+                        older_sibling_node_builder
+                    };
+                    let mut older_sibling_node = older_sibling_node_builder.build();
                     // we just swap these nodes and return is the previous unsplitted child node
                     let grand_parent = std::mem::replace(child, parent_node);
                     // we copy the old children of the node into new node
@@ -315,13 +305,14 @@ impl RadixNode {
             wildcards as last
 
         */
-
         let mut queue = VecDeque::new();
+        let mut v = vec![];
 
         queue.push_back(SearchState {
             curr_node: self,
             remaining_path: path.split('/').filter(|s| !s.is_empty()).collect(),
-            parameters: vec![],
+            path_params: Rc::new(RefCell::new(&mut v)),
+            wildcard_param: String::new(),
             priority: MatchPriority::Exact,
         });
 
@@ -330,7 +321,8 @@ impl RadixNode {
         while let Some(SearchState {
             curr_node,
             remaining_path,
-            parameters,
+            path_params,
+            wildcard_param,
             priority,
         }) = queue.pop_front()
         {
@@ -340,17 +332,18 @@ impl RadixNode {
                     || priority > curr_match.as_ref().expect("Search State").priority)
             {
                 curr_match = Some(MatchResult {
-                    endpoint_id: curr_node.endpoint_id.expect("Search State"),
-                    parameters,
+                    endpoint_id: curr_node.endpoint_id.expect("CurrNode"),
+                    path_params: path_params.borrow().to_vec(),
+                    wildcard_param,
                     priority,
-                })
+                });
             } else if !remaining_path.is_empty() {
                 for child in &curr_node.children {
                     match child.node_type {
                         /*
                          *   My idea is the first when we insert this paths into tree
                          *   we first sort children by priority
-                         *   Exact hightest to WildCard lowest
+                         *   Exact highest to WildCard lowest
                          *   and here we just iterate the children from Exact to WildCard
                          * */
                         // first try match exact
@@ -371,31 +364,33 @@ impl RadixNode {
                                 queue.push_back(SearchState {
                                     curr_node: child,
                                     remaining_path: remaining_path_segments,
-                                    parameters: parameters.clone(),
+                                    path_params: Rc::clone(&path_params),
+                                    wildcard_param: wildcard_param.clone(),
                                     priority,
                                 });
                             }
                         }
                         // second try match parameter
                         RadixNodeType::PathArgument => {
-                            let mut new_params = parameters.clone();
-                            new_params.push(remaining_path[0].to_owned());
+                            (*path_params)
+                                .borrow_mut()
+                                .push(remaining_path[0].to_owned());
                             queue.push_back(SearchState {
                                 curr_node: child,
                                 remaining_path: remaining_path[1..].to_vec(),
-                                parameters: new_params,
+                                path_params: Rc::clone(&path_params),
+                                wildcard_param: String::new(),
                                 // idk if this is correct to do let me think about it
                                 priority: std::cmp::min(priority, MatchPriority::Parameter),
                             });
                         }
                         // third try match wildCard
                         RadixNodeType::WildCard => {
-                            let mut new_params = parameters.clone();
-                            new_params.push(remaining_path.join("/"));
                             queue.push_back(SearchState {
                                 curr_node: child,
                                 remaining_path: vec![],
-                                parameters: new_params,
+                                path_params: Rc::clone(&path_params),
+                                wildcard_param: remaining_path.join("/"),
                                 priority: MatchPriority::WildCard,
                             });
                         }
@@ -410,13 +405,15 @@ impl RadixNode {
 struct SearchState<'a> {
     curr_node: &'a RadixNode,
     remaining_path: Vec<&'a str>,
-    parameters: Vec<String>,
+    path_params: Rc<RefCell<&'a mut Vec<String>>>,
+    wildcard_param: String,
     priority: MatchPriority,
 }
 
 struct MatchResult {
     endpoint_id: u64,
-    parameters: Vec<String>,
+    path_params: Vec<String>,
+    wildcard_param: String,
     priority: MatchPriority,
 }
 
@@ -429,16 +426,10 @@ enum MatchPriority {
 
 #[cfg(test)]
 mod tests {
-    use crate::from_request::PathParam;
-
     use super::*;
 
     #[test]
     fn test() {
-        async fn handle_get(PathParam(order_id): PathParam<usize>) -> String {
-            println!("Handling GET request");
-            order_id.to_string()
-        }
         let mut new_tree = RadixTree::new();
         new_tree.insert(" ", 1_u64);
         new_tree.insert("", 69_u64);

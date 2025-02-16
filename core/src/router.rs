@@ -86,7 +86,7 @@ impl Router {
         stream: &mut S,
     ) -> Result<Response, RhttpError> {
         let request_parts = Self::load_request(stream).await?;
-        let mut request = Incoming::from(request_parts)?;
+        let mut request = Incoming::from(&request_parts)?;
         let handler = self.get_handler(&mut request)?;
         handler.call(request).await
     }
@@ -108,9 +108,7 @@ impl Router {
         Ok(())
     }
 
-    pub async fn load_request<S: Read + Write + Unpin>(
-        stream: &mut S,
-    ) -> Result<String, RhttpError> {
+    async fn load_request<S: Read + Write + Unpin>(stream: &mut S) -> Result<String, RhttpError> {
         let mut buf_reader = BufReader::new(stream);
         if let Ok(load_buffer) = buf_reader.fill_buf().await {
             let load_buffer = load_buffer.to_vec();
@@ -121,17 +119,19 @@ impl Router {
         }
     }
 
-    pub fn get_handler(&self, incoming: &mut Incoming) -> Result<&BoxedHandler, RhttpError> {
+    fn get_handler(&self, incoming: &mut Incoming) -> Result<&BoxedHandler, RhttpError> {
         let method = incoming.get_request_method();
         let path = incoming.get_request_path();
         let tree = self.routes.get(method).expect("Map of Methods!");
 
-        let (endpoint_id, params) = tree.find(path).ok_or(HandlerNotFound(format!(
-            "No handler found for path {} and method {}",
-            path,
-            method.to_str()
-        )))?;
-        incoming.set_path_params(params);
+        let (endpoint_id, path_params, wildcard_param) =
+            tree.find(path).ok_or(HandlerNotFound(format!(
+                "No handler found for path {} and method {}",
+                path,
+                method.to_str()
+            )))?;
+        incoming.path_params = path_params;
+        incoming.wildcard_param = wildcard_param;
         Ok(self
             .handlers
             .get(&endpoint_id)
@@ -154,9 +154,9 @@ mod tests {
     async fn test_double_bind_listener() {
         let mut router = setup_router();
         assert!(router.listener.is_none());
-        router.bind_address("127.0.0.1:8080").await;
+        let _ = router.bind_address("127.0.0.1:8080").await;
         assert!(router.listener.is_some());
-        router.bind_address("127.0.0.1:8080").await;
+        let _ = router.bind_address("127.0.0.1:8080").await;
     }
 
     // #[test]
