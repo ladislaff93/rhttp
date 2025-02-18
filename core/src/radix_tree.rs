@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 enum RadixNodeType {
     Exact,
     PathArgument,
@@ -30,6 +30,7 @@ impl PartialOrd for RadixNodeType {
     }
 }
 
+#[derive(Debug)]
 pub struct RadixTree(RadixNode);
 
 impl Default for RadixTree {
@@ -71,7 +72,7 @@ impl RadixTree {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 struct RadixNode {
     constant: String,
     node_type: RadixNodeType,
@@ -87,7 +88,7 @@ struct RadixNodeBuilder {
 }
 
 impl RadixNodeBuilder {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             constant: String::new(),
             node_type: RadixNodeType::Exact,
@@ -96,22 +97,22 @@ impl RadixNodeBuilder {
         }
     }
 
-    pub fn constant(mut self, constant: String) -> Self {
+    fn constant(mut self, constant: String) -> Self {
         self.constant = constant;
         self
     }
 
-    pub fn node_type(mut self, node_type: RadixNodeType) -> Self {
+    fn node_type(mut self, node_type: RadixNodeType) -> Self {
         self.node_type = node_type;
         self
     }
 
-    pub fn endpoint_id(mut self, endpoint_id: u64) -> Self {
+    fn endpoint_id(mut self, endpoint_id: u64) -> Self {
         self.endpoint_id = Some(endpoint_id);
         self
     }
 
-    pub fn build(self) -> RadixNode {
+    fn build(self) -> RadixNode {
         RadixNode {
             constant: self.constant,
             node_type: self.node_type,
@@ -166,7 +167,7 @@ impl RadixNode {
                         self.children[existing_child_idx].insert(segments, endpoint_id);
                     } else {
                         let radix_node = RadixNodeBuilder::new()
-                            .constant(segment.to_string())
+                            .constant(segment.to_owned())
                             .node_type(RadixNodeType::PathArgument)
                             .build();
                         self.children.push(radix_node);
@@ -260,17 +261,17 @@ impl RadixNode {
         let builder = RadixNodeBuilder::new();
         let mut new_node = if segment.starts_with('*') {
             builder
-                .constant(segment.to_string())
+                .constant(segment.to_owned())
                 .node_type(RadixNodeType::WildCard)
                 .build()
         } else if segment.starts_with(':') {
             builder
-                .constant(segment.to_string())
+                .constant(segment.to_owned())
                 .node_type(RadixNodeType::PathArgument)
                 .build()
         } else {
             builder
-                .constant(segment.to_string())
+                .constant(segment.to_owned())
                 .node_type(RadixNodeType::Exact)
                 .build()
         };

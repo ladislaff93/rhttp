@@ -5,8 +5,8 @@ use core::{
 use http::{method::Method, response::Html};
 use serde::Deserialize;
 
-async fn handle_post_base() -> String {
-    String::new()
+async fn handle_post_base(body: String) -> String {
+    body
 }
 
 async fn handle_post_empty_reply() {}
@@ -79,6 +79,7 @@ async fn main() {
 
     // register handlers
     app.register_path(Method::Get, "/", handle_get_base);
+    app.register_path(Method::Post, "/", handle_post_base);
     app.register_path(Method::Get, "/order/:order_id", handle_get_path_params);
     app.register_path(
         Method::Get,
@@ -87,7 +88,6 @@ async fn main() {
     );
     app.register_path(Method::Get, "/path", handle_get_query_params);
     app.register_path(Method::Get, "/empty", handle_post_empty_reply);
-    app.register_path(Method::Post, "/", handle_post_base);
     app.register_path(Method::Get, "/personal-info", personal_data);
     app.register_path(Method::Get, "/test/*", wildcard_handler);
 

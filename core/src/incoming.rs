@@ -13,7 +13,7 @@ use http::{
 
 #[derive(Debug, Default, Clone)]
 pub struct Incoming {
-    request: Request,
+    pub request: Request,
     pub query_params: String,
     pub path_params: Vec<String>,
     pub wildcard_param: String,

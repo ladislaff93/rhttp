@@ -9,6 +9,15 @@ pub(crate) trait FromRequest {
         Self: Sized + Send + Sync;
 }
 
+impl FromRequest for String {
+    fn extract(req: &Incoming) -> Result<Self, RhttpError>
+    where
+        Self: Sized + Send + Sync,
+    {
+        Ok(req.request.body.clone())
+    }
+}
+
 impl<T1> FromRequest for (T1,)
 where
     T1: FromRequest + Send + Sync,
@@ -64,6 +73,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub struct QueryParams<T>(pub T);
 
 impl<T> QueryParams<T>
@@ -75,6 +85,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub struct PathParam<T>(pub T);
 
 impl<T> PathParam<T>
@@ -92,6 +103,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub struct WildCardParam<T>(pub T);
 
 impl<T> WildCardParam<T>

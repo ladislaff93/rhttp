@@ -26,6 +26,7 @@ use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 
+#[derive(Debug)]
 pub struct Router {
     hasher: DefaultHasher,
     routes: HashMap<Method, RadixTree>,
@@ -94,17 +95,22 @@ impl Router {
     pub async fn listen(&self) -> Result<(), RhttpError> {
         let listener = self.listener.as_ref().ok_or(ListenerNotDefined)?;
 
-        while let Some(Ok(mut stream)) = listener.incoming().next().await {
-            let response = match self.handle_request(&mut stream).await {
-                Ok(r) => r,
-                Err(err) => match err {
-                    HandlerNotFound(_) => Status::BadRequest.into_response(),
-                    _ => Status::InternalServerError.into_response(),
-                },
-            };
-            let ser = response.serialize();
-            stream.write_all(&ser).await?;
-        }
+        listener
+            .incoming()
+            .for_each_concurrent(None, |stream| async {
+                if let Ok(mut stream) = stream {
+                    let response = match self.handle_request(&mut stream).await {
+                        Ok(r) => r,
+                        Err(err) => match err {
+                            HandlerNotFound(_) => Status::BadRequest.into_response(),
+                            _ => Status::InternalServerError.into_response(),
+                        },
+                    };
+                    let ser = response.serialize();
+                    stream.write_all(&ser).await.expect("result of execution");
+                }
+            })
+            .await;
         Ok(())
     }
 

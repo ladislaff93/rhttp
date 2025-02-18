@@ -38,9 +38,4 @@ impl Request {
         self.headers.insert(header_type, header_value);
         Ok(())
     }
-
-    pub fn add_body(&mut self, body: String) {
-        self.body = body;
-    }
-
 }

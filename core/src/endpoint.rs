@@ -1,10 +1,7 @@
 use crate::{handler::Handler, incoming::Incoming};
 use http::{common::RhttpError, response::Response};
 use std::{
-    future::Future,
-    marker::PhantomData,
-    ops::{Deref, DerefMut},
-    pin::Pin,
+    fmt::Debug, future::Future, marker::PhantomData, ops::{Deref, DerefMut}, pin::Pin
 };
 
 pub(crate) type BoxedHandler = Box<dyn ErasedIntoHandler + Send + Sync>;
@@ -15,12 +12,18 @@ pub(crate) type PinnedBoxedResponse<'r> =
 pub(crate) struct Endpoint(BoxedHandler);
 
 impl Endpoint {
-    pub fn new<H, T>(handler: H) -> Self
+    pub(crate) fn new<H, T>(handler: H) -> Self
     where
         H: Handler<T> + Send + Sync + 'static,
-        T: 'static + Send + Sync,
+        T: Send + Sync + 'static,
     {
         Self(Box::new(HandlerWrapper::new(handler)))
+    }
+}
+
+impl Debug for Endpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Endpoint").finish()
     }
 }
 
@@ -42,6 +45,7 @@ pub trait ErasedIntoHandler {
     fn call(&self, request: Incoming) -> PinnedBoxedResponse;
 }
 
+#[derive(Debug)]
 pub struct HandlerWrapper<H, T>
 where
     H: Handler<T> + Send + Sync,
